@@ -1,0 +1,187 @@
+
+name: Records iOS Project Check
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  check-ios:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Download recovered Unity project
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          RUN_ID=$(gh run list \
+            --workflow records.yml \
+            --status success \
+            --limit 10 \
+            --json databaseId \
+            --jq '.[0].databaseId')
+
+          if [ -z "$RUN_ID" ]; then
+            echo "No successful recovery run found"
+            exit 1
+          fi
+
+          echo "Using recovery run: $RUN_ID"
+
+          mkdir -p download
+
+          gh run download "$RUN_ID" \
+            --name Records-Recovery \
+            --dir download
+
+          ls -lh download/
+
+      - name: Extract recovered project
+        shell: bash
+        run: |
+          mkdir -p workspace
+
+          unzip -q \
+            download/Records-Recovered-Project.zip \
+            -d workspace
+
+          echo "Extraction completed"
+
+      - name: Check Unity project
+        shell: bash
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          root = Path("workspace")
+          report = []
+
+          def log(message):
+              print(message)
+              report.append(message)
+
+          log("# Slendytubbies 0: Records")
+          log("## iOS Project Inspection")
+          log("")
+
+          projects = [
+              p.parent
+              for p in root.rglob("Assets")
+              if p.is_dir()
+              and (p.parent / "ProjectSettings").is_dir()
+          ]
+
+          if not projects:
+              log("ERROR: Unity project not found")
+              Path("report.md").write_text(
+                  "\n".join(report)
+              )
+              raise SystemExit(1)
+
+          project = projects[0]
+          assets = project / "Assets"
+
+          log(f"Project: {project}")
+
+          version = (
+              project / "ProjectSettings"
+              / "ProjectVersion.txt"
+          )
+
+          if version.exists():
+              log("Unity version:")
+              log(version.read_text(
+                  errors="replace"
+              ).strip())
+
+          extensions = {
+              "Scenes": ".unity",
+              "Scripts": ".cs",
+              "Prefabs": ".prefab",
+              "Materials": ".mat",
+              "Shaders": ".shader",
+              "Textures": ".png",
+          }
+
+          log("")
+          log("## Recovered files")
+
+          for name, ext in extensions.items():
+              files = list(assets.rglob("*" + ext))
+              log(f"{name}: {len(files)}")
+
+          scenes = list(assets.rglob("*.unity"))
+          scripts = list(assets.rglob("*.cs"))
+          unreadable = list(
+              project.rglob("*.unreadable")
+          )
+
+          log(f"Unreadable assets: {len(unreadable)}")
+
+          log("")
+          log("## Scene names")
+          for scene in scenes[:30]:
+              log(f"- {scene.name}")
+
+          log("")
+          log("## Script examples")
+          for script in scripts[:30]:
+              log(f"- {script.name}")
+
+          log("")
+          log("## iOS preparation")
+
+          if scenes:
+              log("OK: Scene files exist")
+          else:
+              log("WARNING: No scenes recovered")
+
+          if scripts:
+              log("OK: C# files exist")
+              log(
+                  "WARNING: Scripts still need "
+                  "compilation and behavior testing"
+              )
+          else:
+              log(
+                  "WARNING: No C# source files found"
+              )
+
+          if unreadable:
+              log(
+                  "WARNING: Some assets "
+                  "could not be reconstructed"
+              )
+
+          if (project / "Packages").exists():
+              log("OK: Packages folder exists")
+          else:
+              log("WARNING: Packages missing")
+
+          log("")
+          log("## Conclusion")
+          log(
+              "Structure inspected. "
+              "Unity compilation, mobile controls, "
+              "graphics compatibility, and gameplay "
+              "are NOT yet verified."
+          )
+
+          Path("report.md").write_text(
+              "\n".join(report),
+              encoding="utf-8"
+          )
+          PY
+
+      - name: Upload inspection report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Records-iOS-Report
+          path: report.md
+          if-no-files-found: warn
