@@ -1,0 +1,91 @@
+
+name: Slendytubbies Records Recovery
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  recover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download original game
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p game
+          gh release download v0.1 \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern "*.zip" \
+            --dir game
+          ls -lh game/
+
+      - name: Extract game
+        run: |
+          mkdir -p unpack
+          unzip -q game/*.zip -d unpack
+          find unpack -name "globalgamemanagers"
+          test -d \
+            "unpack/Slendytubbies 0 Records/Slendytubbies 0 Records_Data"
+
+      - name: Install .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+
+      - name: Download AssetRipper CLI
+        run: |
+          git clone --depth 1 \
+            https://github.com/nowl-it/AssetRipperCLI.git \
+            ripper-src
+
+      - name: Build AssetRipper
+        run: |
+          dotnet publish \
+            ripper-src/Source/AssetRipper.GUI.Free/AssetRipper.GUI.Free.csproj \
+            -c Release \
+            -r linux-x64 \
+            --self-contained true \
+            -p:PublishAot=false \
+            -o "$GITHUB_WORKSPACE/ripper-bin"
+
+      - name: Recover Unity project
+        id: export
+        continue-on-error: true
+        run: |
+          mkdir -p recovered
+          dotnet \
+            "$GITHUB_WORKSPACE/ripper-bin/AssetRipper.GUI.Free.dll" \
+            --cli \
+            --input "$GITHUB_WORKSPACE/unpack/Slendytubbies 0 Records" \
+            --output "$GITHUB_WORKSPACE/recovered" \
+            --mode unity \
+            2>&1 | tee recovery.log
+          exit ${PIPESTATUS[0]}
+
+      - name: Show recovered files
+        if: always()
+        run: |
+          find recovered -maxdepth 3 -type f \
+            | head -80 || true
+
+      - name: Save recovery result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Records-Recovery
+          path: |
+            recovered/
+            recovery.log
+          if-no-files-found: warn
+
+      - name: Check recovery status
+        if: steps.export.outcome == 'failure'
+        run: exit 1
