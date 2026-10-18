@@ -16,7 +16,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Download Slendytubbies 0 Records
+      - name: Download original game
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -29,13 +29,13 @@ jobs:
 
           ls -lh game/
 
-      - name: Extract original game
+      - name: Extract game
         shell: bash
         run: |
           mkdir -p unpack
 
-          for zipfile in game/*.zip; do
-            unzip -q "$zipfile" -d unpack
+          for file in game/*.zip; do
+            unzip -q "$file" -d unpack
           done
 
           DATA_DIR=$(find unpack \
@@ -43,22 +43,21 @@ jobs:
             -printf '%h\n' | head -1)
 
           if [ -z "$DATA_DIR" ]; then
-            echo "Unity game data not found"
+            echo "Unity data not found!"
             exit 1
           fi
 
           GAME_DIR=$(dirname "$DATA_DIR")
           echo "GAME_DIR=$GAME_DIR" >> "$GITHUB_ENV"
 
-          echo "Found game: $GAME_DIR"
-          ls -la "$GAME_DIR"
+          echo "Game found: $GAME_DIR"
 
       - name: Install .NET 9
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '9.0.x'
 
-      - name: Download AssetRipper CLI
+      - name: Download AssetRipper
         run: |
           git clone --depth 1 \
             https://github.com/nowl-it/AssetRipperCLI.git \
@@ -91,26 +90,44 @@ jobs:
 
           exit ${PIPESTATUS[0]}
 
-      - name: Inspect recovered files
+      - name: Check recovered project
         if: always()
+        shell: bash
         run: |
           echo "Recovered files:"
-          find recovered -maxdepth 3 \
-            -type f | head -100 || true
+          find recovered -type f | wc -l
+          find recovered -maxdepth 3 -type f \
+            | head -50 || true
 
-      - name: Upload recovered project
+      - name: Pack recovered project
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p artifacts
+
+          if [ -n "$(find recovered -type f -print -quit)" ]; then
+            zip -q -r \
+              artifacts/Records-Recovered-Project.zip \
+              recovered/
+          else
+            echo "No recovered project files."
+          fi
+
+          if [ -f recovery.log ]; then
+            cp recovery.log artifacts/recovery.log
+          fi
+
+          ls -lh artifacts/
+
+      - name: Upload recovered ZIP
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: Records-Recovery
-          path: |
-            recovered/
-            recovery.log
+          path: artifacts/
           retention-days: 7
           if-no-files-found: warn
 
       - name: Report recovery failure
         if: steps.recovery.outcome == 'failure'
-        run: |
-          echo "AssetRipper recovery failed."
-          exit 1
+        run: exit 1
