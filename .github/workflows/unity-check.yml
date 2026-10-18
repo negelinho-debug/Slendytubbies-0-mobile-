@@ -1,0 +1,162 @@
+
+name: Records Unity Compilation Check
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  unity-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download recovered project
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          RUN_ID=$(gh run list \
+            --repo "$GITHUB_REPOSITORY" \
+            --workflow records.yml \
+            --status success \
+            --limit 10 \
+            --json databaseId \
+            --jq '.[0].databaseId // empty')
+
+          if [ -z "$RUN_ID" ]; then
+            echo "No successful recovery found"
+            exit 1
+          fi
+
+          mkdir -p download
+
+          gh run download "$RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" \
+            --name Records-Recovery \
+            --dir download
+
+          test -f \
+            download/Records-Recovered-Project.zip
+
+      - name: Extract Unity project
+        shell: bash
+        run: |
+          mkdir -p extracted
+
+          unzip -q \
+            download/Records-Recovered-Project.zip \
+            -d extracted
+
+          PROJECT=$(find extracted \
+            -type d -name ProjectSettings \
+            -printf '%h\n' | head -1)
+
+          if [ -z "$PROJECT" ]; then
+            echo "Unity project not found"
+            exit 1
+          fi
+
+          mv "$PROJECT" unity-project
+
+      - name: Inspect project
+        shell: bash
+        run: |
+          test -d unity-project/Assets
+          test -d unity-project/ProjectSettings
+
+          mkdir -p reports
+
+          echo "Slendytubbies Records" \
+            > reports/inspection.txt
+
+          echo "Scenes:" \
+            >> reports/inspection.txt
+
+          find unity-project/Assets \
+            -name "*.unity" | wc -l \
+            >> reports/inspection.txt
+
+          echo "C# scripts:" \
+            >> reports/inspection.txt
+
+          find unity-project/Assets \
+            -name "*.cs" | wc -l \
+            >> reports/inspection.txt
+
+          echo "Unity version:" \
+            >> reports/inspection.txt
+
+          cat unity-project/ProjectSettings/ProjectVersion.txt \
+            >> reports/inspection.txt
+
+          cat reports/inspection.txt
+
+      - name: Create compilation check
+        shell: bash
+        run: |
+          mkdir -p unity-project/Assets/Editor
+
+          cat > unity-project/Assets/Editor/CICompileCheck.cs <<'CS'
+          using UnityEngine;
+          using UnityEditor;
+
+          public static class CICompileCheck
+          {
+              public static void Run()
+              {
+                  Debug.Log(
+                      "RECORDS_UNITY_COMPILATION_PASSED"
+                  );
+
+                  Debug.Log(
+                      "Scene assets: " +
+                      AssetDatabase.FindAssets(
+                          "t:Scene"
+                      ).Length
+                  );
+              }
+          }
+          CS
+
+      - name: Check Unity license
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+        shell: bash
+        run: |
+          if [ -z "$UNITY_LICENSE" ] ||
+             [ -z "$UNITY_EMAIL" ] ||
+             [ -z "$UNITY_PASSWORD" ]; then
+            echo "Unity activation secrets missing"
+            echo "Set UNITY_LICENSE,"
+            echo "UNITY_EMAIL and UNITY_PASSWORD"
+            exit 1
+          fi
+
+      - name: Compile in Unity
+        uses: game-ci/unity-builder@v4
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+        with:
+          projectPath: unity-project
+          unityVersion: 6000.3.10f1
+          targetPlatform: StandaloneLinux64
+          buildMethod: CICompileCheck.Run
+
+      - name: Save inspection report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Records-Unity-Inspection
+          path: reports/
+          if-no-files-found: warn
