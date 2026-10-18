@@ -1,0 +1,34 @@
+
+name: Slendytubbies Records iOS
+
+on:
+  workflow_dispatch:
+
+jobs:
+  unity-ios:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Get project
+        uses: actions/checkout@v4
+
+      - name: Check Unity project
+        run: |
+          test -d Assets
+          test -d ProjectSettings
+          test -f ProjectSettings/ProjectVersion.txt
+
+      - name: Generate iOS Xcode project
+        uses: game-ci/unity-builder@v4
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+        with:
+          targetPlatform: iOS
+
+      - name: Save Xcode project
+        uses: actions/upload-artifact@v4
+        with:
+          name: Records-iOS-Xcode
+          path: build/
