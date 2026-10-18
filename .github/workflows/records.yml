@@ -10,35 +10,53 @@ permissions:
 jobs:
   recover:
     runs-on: ubuntu-latest
-    timeout-minutes: 50
+    timeout-minutes: 60
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Download original game
+      - name: Download Slendytubbies 0 Records
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p game
-          gh release download v0.1 \
+
+          gh release download 0.0.1 \
             --repo "$GITHUB_REPOSITORY" \
             --pattern "*.zip" \
             --dir game
+
           ls -lh game/
 
-      - name: Extract game
+      - name: Extract original game
+        shell: bash
         run: |
           mkdir -p unpack
-          unzip -q game/*.zip -d unpack
-          find unpack -name "globalgamemanagers"
-          test -d \
-            "unpack/Slendytubbies 0 Records/Slendytubbies 0 Records_Data"
 
-      - name: Install .NET
+          for zipfile in game/*.zip; do
+            unzip -q "$zipfile" -d unpack
+          done
+
+          DATA_DIR=$(find unpack \
+            -type f -name globalgamemanagers \
+            -printf '%h\n' | head -1)
+
+          if [ -z "$DATA_DIR" ]; then
+            echo "Unity game data not found"
+            exit 1
+          fi
+
+          GAME_DIR=$(dirname "$DATA_DIR")
+          echo "GAME_DIR=$GAME_DIR" >> "$GITHUB_ENV"
+
+          echo "Found game: $GAME_DIR"
+          ls -la "$GAME_DIR"
+
+      - name: Install .NET 9
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 9.0.x
+          dotnet-version: '9.0.x'
 
       - name: Download AssetRipper CLI
         run: |
@@ -57,26 +75,30 @@ jobs:
             -o "$GITHUB_WORKSPACE/ripper-bin"
 
       - name: Recover Unity project
-        id: export
+        id: recovery
         continue-on-error: true
+        shell: bash
         run: |
           mkdir -p recovered
+
           dotnet \
             "$GITHUB_WORKSPACE/ripper-bin/AssetRipper.GUI.Free.dll" \
             --cli \
-            --input "$GITHUB_WORKSPACE/unpack/Slendytubbies 0 Records" \
+            --input "$GITHUB_WORKSPACE/$GAME_DIR" \
             --output "$GITHUB_WORKSPACE/recovered" \
-            --mode unity \
+            --mode Unity \
             2>&1 | tee recovery.log
+
           exit ${PIPESTATUS[0]}
 
-      - name: Show recovered files
+      - name: Inspect recovered files
         if: always()
         run: |
-          find recovered -maxdepth 3 -type f \
-            | head -80 || true
+          echo "Recovered files:"
+          find recovered -maxdepth 3 \
+            -type f | head -100 || true
 
-      - name: Save recovery result
+      - name: Upload recovered project
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -84,8 +106,11 @@ jobs:
           path: |
             recovered/
             recovery.log
+          retention-days: 7
           if-no-files-found: warn
 
-      - name: Check recovery status
-        if: steps.export.outcome == 'failure'
-        run: exit 1
+      - name: Report recovery failure
+        if: steps.recovery.outcome == 'failure'
+        run: |
+          echo "AssetRipper recovery failed."
+          exit 1
