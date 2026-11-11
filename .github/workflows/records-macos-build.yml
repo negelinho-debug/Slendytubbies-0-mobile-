@@ -1,0 +1,107 @@
+
+name: Records - macOS iOS Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_branch:
+        description: 'Recovered Records branch'
+        required: true
+        type: string
+        default: 'records-code-fix3-1-1'
+
+permissions:
+  contents: read
+
+jobs:
+  preflight:
+    name: Check files and Unity license first
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check Unity secrets without showing them
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for key in UNITY_LICENSE UNITY_EMAIL UNITY_PASSWORD; do
+            if [ -z "${!key:-}" ]; then
+              echo "ERROR: GitHub Actions secret $key is missing." >&2
+              echo 'See https://game.ci/docs/github/activation/' >&2
+              exit 1
+            fi
+          done
+          echo 'Unity secrets are present (validity not yet checked).'
+
+      - name: Checkout recovered Unity project
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_branch }}
+          lfs: true
+          fetch-depth: 1
+
+      - name: Validate recovered game files
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -d Assets || { echo 'Missing Assets directory'; exit 1; }
+          test -f ProjectSettings/ProjectVersion.txt || { echo 'Missing Unity version'; exit 1; }
+          scenes=$(find Assets -type f -name '*.unity' | wc -l | tr -d ' ')
+          test "$scenes" -gt 0 || { echo 'No Unity scenes found'; exit 1; }
+          echo "Unity version: $(cat ProjectSettings/ProjectVersion.txt)"
+          echo "Unity scenes found: $scenes"
+          echo "C# scripts found: $(find Assets -type f -name '*.cs' | wc -l | tr -d ' ')"
+          echo 'IMPORTANT: Existence of scenes does not confirm they are enabled in Build Settings.'
+          {
+            echo '### Records source preflight passed'
+            echo "Branch: ${{ inputs.source_branch }}"
+            echo "Scenes found: $scenes"
+            echo 'Next: attempt Unity iOS export on GitHub macOS.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  unity-ios:
+    name: Unity iOS export on Mac
+    needs: preflight
+    runs-on: macos-15-intel
+    timeout-minutes: 75
+    steps:
+      - name: Checkout recovered Unity project
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_branch }}
+          lfs: true
+          fetch-depth: 1
+
+      - name: Build Unity iOS Xcode project
+        uses: game-ci/unity-builder@v4
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+        with:
+          projectPath: .
+          unityVersion: auto
+          targetPlatform: iOS
+
+      - name: Upload generated Xcode project
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Records-iOS-Xcode-Project
+          path: build/
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Explain results
+        if: success()
+        shell: bash
+        run: |
+          {
+            echo '### Unity iOS export completed'
+            echo 'The artifact contains an Xcode project, NOT a signed IPA.'
+            echo 'The next step is Xcode compilation and Apple code signing.'
+            echo 'The existence of an Xcode project does not prove the story or terminal works.'
+          } >> "$GITHUB_STEP_SUMMARY"
