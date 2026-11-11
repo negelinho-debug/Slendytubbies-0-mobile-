@@ -1,0 +1,165 @@
+
+name: Slendytubbies Records iOS - Project Check
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_branch:
+        description: 'Recovered Unity project branch'
+        required: true
+        default: 'records-code-fix3-1-1'
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  unity-ios:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      - name: Get recovered Unity project
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_branch }}
+          fetch-depth: 1
+          lfs: true
+
+      - name: Find Unity project
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          PROJECT=""
+
+          if [ -d Assets ] && \
+             [ -f ProjectSettings/ProjectVersion.txt ]; then
+            PROJECT="."
+          else
+            while IFS= read -r -d '' file; do
+              candidate="$(dirname "$(dirname "$file")")"
+
+              if [ -d "$candidate/Assets" ]; then
+                PROJECT="$candidate"
+                break
+              fi
+            done < <(find . -maxdepth 6 -type f \
+              -path '*/ProjectSettings/ProjectVersion.txt' \
+              -print0)
+          fi
+
+          if [ -z "$PROJECT" ]; then
+            echo "ERROR: Unity project not found!"
+            echo "Selected branch:"
+            git branch --show-current
+            exit 1
+          fi
+
+          echo "PROJECT_PATH=$PROJECT" >> "$GITHUB_ENV"
+          echo "Found Unity project: $PROJECT"
+
+      - name: Check original game resources
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          PROJECT="$PROJECT_PATH"
+          ASSETS="$PROJECT/Assets"
+
+          test -d "$ASSETS"
+          test -f "$PROJECT/ProjectSettings/ProjectVersion.txt"
+
+          SCENES=$(find "$ASSETS" -type f \
+            -name '*.unity' | wc -l)
+
+          ANIMATIONS=$(find "$ASSETS" -type f \
+            -name '*.anim' | wc -l)
+
+          SCRIPTS=$(find "$ASSETS" -type f \
+            -name '*.cs' | wc -l)
+
+          echo "Scenes: $SCENES"
+          echo "Animations: $ANIMATIONS"
+          echo "C# scripts: $SCRIPTS"
+
+          if [ "$SCENES" -eq 0 ]; then
+            echo "ERROR: No scenes recovered."
+            exit 1
+          fi
+
+      - name: Check terminal and iPhone log
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          PROJECT="$PROJECT_PATH"
+          mkdir -p reports
+
+          {
+            echo "Slendytubbies 0 Records - iOS Source Check"
+            echo "========================================"
+            echo "Branch: ${{ inputs.source_branch }}"
+            echo "Unity project: $PROJECT"
+            echo ""
+            echo "Unity version:"
+            cat "$PROJECT/ProjectSettings/ProjectVersion.txt"
+            echo ""
+            echo "Scenes:"
+            find "$PROJECT/Assets" -name '*.unity' | wc -l
+            echo "Animations:"
+            find "$PROJECT/Assets" -name '*.anim' | wc -l
+            echo "Scripts:"
+            find "$PROJECT/Assets" -name '*.cs' | wc -l
+            echo ""
+            echo "iPhone debug logger:"
+            if find "$PROJECT/Assets" -name \
+              'RecordsRuntimeLog.cs' | grep -q .; then
+              echo "FOUND"
+            else
+              echo "NOT FOUND"
+            fi
+            echo ""
+            echo "Files access setup:"
+            if find "$PROJECT/Assets" -name \
+              'RecordsFilesAccess.cs' | grep -q .; then
+              echo "FOUND"
+            else
+              echo "NOT FOUND"
+            fi
+            echo ""
+            echo "Terminal candidates:"
+            find "$PROJECT/Assets" -type f \
+              \( -iname '*terminal*' \
+              -o -iname '*password*' \
+              -o -iname '*record*' \) | head -50
+            echo ""
+            echo "This is a source inspection."
+            echo "Gameplay compilation NOT verified."
+            echo "IPA has NOT been built."
+          } > reports/ios-check.txt
+
+          cat reports/ios-check.txt
+
+      - name: Upload diagnostic report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Records-iOS-Source-Report
+          path: reports/
+          retention-days: 14
+          if-no-files-found: warn
+
+      - name: Show result
+        if: success()
+        shell: bash
+        run: |
+          {
+            echo "## Records Unity project found"
+            echo ""
+            echo "Branch: ${{ inputs.source_branch }}"
+            echo ""
+            echo "Project path: $PROJECT_PATH"
+            echo ""
+            echo "Next: configure Unity Cloud Build for iOS."
+          } >> "$GITHUB_STEP_SUMMARY"
