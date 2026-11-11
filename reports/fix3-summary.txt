@@ -1,0 +1,11 @@
+Slendytubbies 0: Records / Fix 3
+Newly restored: 4
+Still unresolved: 1039
+Scenes: 11
+Animations: 105
+Animator controllers: 0
+Terminal-named scripts: 38
+Original script GUIDs preserved.
+Terminal passwords were not modified.
+Gameplay has NOT been tested.
+This is NOT an IPA build.

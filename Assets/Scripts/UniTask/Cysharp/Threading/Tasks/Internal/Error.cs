@@ -1,66 +1,79 @@
-using UnityEngine;
+using System;
+using System.Runtime.CompilerServices;
 
-namespace Cysharp.Threading.Tasks.Internal
+namespace Cysharp.Threading.Tasks.Internal;
+
+internal static class Error
 {
-	public class Error : MonoBehaviour
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	public static void ThrowArgumentNullException<T>(T value, string paramName) where T : class
 	{
-		/*
-		Dummy class. This could have happened for several reasons:
+		if (value == null)
+		{
+			ThrowArgumentNullExceptionCore(paramName);
+		}
+	}
 
-		1. No dll files were provided to AssetRipper.
+	[MethodImpl(MethodImplOptions.NoInlining)]
+	private static void ThrowArgumentNullExceptionCore(string paramName)
+	{
+		throw new ArgumentNullException(paramName);
+	}
 
-			Unity asset bundles and serialized files do not contain script information to decompile.
-				* For Mono games, that information is contained in .NET dll files.
-				* For Il2Cpp games, that information is contained in compiled C++ assemblies and the global metadata.
-				
-			AssetRipper usually expects games to conform to a normal file structure for Unity games of that platform.
-			A unexpected file structure could cause AssetRipper to not find the required files.
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	public static Exception ArgumentOutOfRange(string paramName)
+	{
+		return new ArgumentOutOfRangeException(paramName);
+	}
 
-		2. Incorrect dll files were provided to AssetRipper.
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	public static Exception NoElements()
+	{
+		return new InvalidOperationException("Source sequence doesn't contain any elements.");
+	}
 
-			Any of the following could cause this:
-				* Il2CppInterop assemblies
-				* Deobfuscated assemblies
-				* Older assemblies (compared to when the bundle was built)
-				* Newer assemblies (compared to when the bundle was built)
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	public static Exception MoreThanOneElement()
+	{
+		return new InvalidOperationException("Source sequence contains more than one element.");
+	}
 
-			Note: Although assembly publicizing is bad, it alone cannot cause empty scripts. See: https://github.com/AssetRipper/AssetRipper/issues/653
+	[MethodImpl(MethodImplOptions.NoInlining)]
+	public static void ThrowArgumentException(string message)
+	{
+		throw new ArgumentException(message);
+	}
 
-		3. Assembly Reconstruction has not been implemented.
+	[MethodImpl(MethodImplOptions.NoInlining)]
+	public static void ThrowNotYetCompleted()
+	{
+		throw new InvalidOperationException("Not yet completed.");
+	}
 
-			Asset bundles contain a small amount of information about the script content.
-			This information can be used to recover the serializable fields of a script.
+	[MethodImpl(MethodImplOptions.NoInlining)]
+	public static T ThrowNotYetCompleted<T>()
+	{
+		throw new InvalidOperationException("Not yet completed.");
+	}
 
-			See: https://github.com/AssetRipper/AssetRipper/issues/655
-	
-		4. This script is unnecessary.
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	public static void ThrowWhenContinuationIsAlreadyRegistered<T>(T continuationField) where T : class
+	{
+		if (continuationField != null)
+		{
+			ThrowInvalidOperationExceptionCore("continuation is already registered.");
+		}
+	}
 
-			If this script has no asset or script references, it can be deleted.
-			Be sure to resolve any compile errors before deleting because they can hide references.
+	[MethodImpl(MethodImplOptions.NoInlining)]
+	private static void ThrowInvalidOperationExceptionCore(string message)
+	{
+		throw new InvalidOperationException(message);
+	}
 
-		5. Script Content Level 0
-
-			AssetRipper was set to not load any script information.
-
-		6. Cpp2IL failed to decompile Il2Cpp data
-
-			If this happened, there will be errors in the AssetRipper.log indicating that it happened.
-			This is an upstream problem, and the AssetRipper developer has very little control over it.
-			Please post a GitHub issue at: https://github.com/SamboyCoding/Cpp2IL/issues
-
-		7. An incorrect path was provided to AssetRipper.
-
-			This is characterized by "Mixed game structure has been found at" in the AssetRipper.log file.
-			AssetRipper expects games to conform to a normal file structure for Unity games of that platform.
-			An unexpected file structure could cause AssetRipper to not find the required files for script decompilation.
-			Generally, AssetRipper expects users to provide the root folder of the game. For example:
-				* Windows: the folder containing the game's .exe file
-				* Mac: the .app file/folder
-				* Linux: the folder containing the game's executable file
-				* Android: the apk file
-				* iOS: the ipa file
-				* Switch: the folder containing exefs and romfs
-
-		*/
+	[MethodImpl(MethodImplOptions.NoInlining)]
+	public static void ThrowOperationCanceledException()
+	{
+		throw new OperationCanceledException();
 	}
 }
