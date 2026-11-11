@@ -1,0 +1,12 @@
+Slendytubbies 0: Records recovery
+Original game code: Mono DLL found
+Unity project version: m_EditorVersion: 6000.3.10f1
+Scenes: 11
+Animation files: 105
+Animator controllers: 0
+C# scripts: 1409
+Dummy scripts replaced: 228
+Dummy scripts unresolved: 1181
+Terminal-related candidate files: 50
+Original terminal commands/passwords are NOT replaced or invented.
+WARNING: Export success does not prove that the game or terminal works on iOS.

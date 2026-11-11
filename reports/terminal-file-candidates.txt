@@ -1,0 +1,50 @@
+Assets/MonoBehaviour/Terminal Screen Profile.asset
+Assets/MonoBehaviour/Terminal Clawy Profile.asset
+Assets/MonoBehaviour/Terminal Clawy Profile.asset.meta
+Assets/MonoBehaviour/Terminal Screen Off Profile.asset
+Assets/MonoBehaviour/Terminal Profile.asset.meta
+Assets/MonoBehaviour/Terminal Screen Profile.asset.meta
+Assets/MonoBehaviour/TERM_LOGIN.asset
+Assets/MonoBehaviour/Records_Text.asset
+Assets/MonoBehaviour/Terminal Profile.asset
+Assets/MonoBehaviour/Records_Text.asset.meta
+Assets/MonoBehaviour/Terminal Screen Off Profile.asset.meta
+Assets/MonoBehaviour/Terminal Localization.asset
+Assets/MonoBehaviour/TERM_LOGIN.asset.meta
+Assets/MonoBehaviour/Terminal Localization.asset.meta
+Assets/Material/TerminalMetal.mat
+Assets/Material/TerminalMetal.mat.meta
+Assets/Texture2D/terminal_Base_color.png
+Assets/Texture2D/terminal_Base_color.png.meta
+Assets/Scripts/Assembly-CSharp/ScriptUsageUnityRecorder.cs
+Assets/Scripts/Assembly-CSharp/TerminalCommands.cs
+Assets/Scripts/Assembly-CSharp/TerminalLocalization.cs
+Assets/Scripts/Assembly-CSharp/ScriptUsageUnityRecorder.cs.meta
+Assets/Scripts/Assembly-CSharp/TerminalCommands.cs.meta
+Assets/Scripts/Assembly-CSharp/WhiteTerminal.cs.meta
+Assets/Scripts/Assembly-CSharp/Terminal.cs
+Assets/Scripts/Assembly-CSharp/TerminalLocalization.cs.meta
+Assets/Scripts/Assembly-CSharp/COATTerminalInput.cs
+Assets/Scripts/Assembly-CSharp/COATTerminalInput.cs.meta
+Assets/Scripts/Assembly-CSharp/COATTerminal.cs
+Assets/Scripts/Assembly-CSharp/Terminal.cs.meta
+Assets/Scripts/Assembly-CSharp/COATTerminal.cs.meta
+Assets/Scripts/Assembly-CSharp/WhiteTerminal.cs
+Assets/Scripts/Unity.Animation.Rigging.DocCodeExamples/Unity.Animation.Rigging.DocCodeExamples.asmdef
+Assets/Scripts/Unity.Recorder/Unity.Recorder.asmdef
+Assets/Scripts/Unity.InputSystem/UnityEngine/InputSystem/Utilities/CSharpCodeHelpers.cs.meta
+Assets/Scripts/Unity.InputSystem/UnityEngine/InputSystem/Utilities/CSharpCodeHelpers.cs
+Assets/Scripts/Unity.InputSystem/UnityEngine/InputSystem/Editor/InputLayoutCodeGenerator.cs.meta
+Assets/Scripts/Unity.InputSystem/UnityEngine/InputSystem/Editor/InputActionCodeGenerator.cs
+Assets/Scripts/Unity.InputSystem/UnityEngine/InputSystem/Editor/InputLayoutCodeGenerator.cs
+Assets/Scripts/Unity.InputSystem/UnityEngine/InputSystem/Editor/InputActionCodeGenerator.cs.meta
+Assets/Scripts/Unity.Recorder/UnityEngine/Recorder/RecorderBindings.cs
+Assets/Scripts/Unity.Recorder/UnityEngine/Recorder/RecorderBindings.cs.meta
+Assets/Scripts/Unity.Collections/Unity/Collections/Unicode.cs
+Assets/Scripts/Unity.Collections/Unity/Collections/Unicode.cs.meta
+Assets/Scripts/Unity.TextMeshPro/TMPro/CodePoint.cs.meta
+Assets/Scripts/Unity.TextMeshPro/TMPro/TMP_GlyphValueRecord.cs.meta
+Assets/Scripts/Unity.TextMeshPro/TMPro/SingleSubstitutionRecord.cs
+Assets/Scripts/Unity.TextMeshPro/TMPro/SingleSubstitutionRecord.cs.meta
+Assets/Scripts/Unity.TextMeshPro/TMPro/TMP_GlyphValueRecord.cs
+Assets/Scripts/Unity.TextMeshPro/TMPro/CodePoint.cs

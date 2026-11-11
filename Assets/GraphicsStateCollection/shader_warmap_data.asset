@@ -1,0 +1,17 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!55640938 &55640938
+GraphicsStateCollection:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_Name: shader_warmap_data
+  m_Version: 0
+  m_DeviceRenderer: 4
+  m_RuntimePlatform: 54
+  m_QualityLevelName:
+  m_VariantInfoMap: {}
+  m_VertexLayoutInfoMap: {}
+  m_RenderPassInfoMap: {}
+  m_RenderStateMap: {}

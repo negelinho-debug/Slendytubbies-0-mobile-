@@ -1,0 +1,19 @@
+using UnityEngine;
+
+namespace KinematicCharacterController;
+
+[CreateAssetMenu]
+public class KCCSettings : ScriptableObject
+{
+	[Tooltip("Determines if the system simulates automatically. If true, the simulation is done on FixedUpdate")]
+	public bool AutoSimulation = true;
+
+	[Tooltip("Should interpolation of characters and PhysicsMovers be handled")]
+	public bool Interpolate = true;
+
+	[Tooltip("Initial capacity of the system's list of Motors (will resize automatically if needed, but setting a high initial capacity can help preventing GC allocs)")]
+	public int MotorsListInitialCapacity = 100;
+
+	[Tooltip("Initial capacity of the system's list of Movers (will resize automatically if needed, but setting a high initial capacity can help preventing GC allocs)")]
+	public int MoversListInitialCapacity = 100;
+}
