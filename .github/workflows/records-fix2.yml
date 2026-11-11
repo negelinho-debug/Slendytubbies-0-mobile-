@@ -1,0 +1,236 @@
+
+name: Records Fix 2 - Recover More Original Scripts
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_branch:
+        description: 'Recovered Records Unity project branch'
+        required: true
+        default: 'records-full-recovery-2-1'
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  recover-code:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+
+    steps:
+      - name: Require private repository
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(gh api "repos/$GITHUB_REPOSITORY" --jq .private)" = 'true' || {
+            echo 'Make the repository private first.' >&2
+            exit 1
+          }
+
+      - name: Checkout existing recovered Unity project
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_branch }}
+          fetch-depth: 0
+          lfs: true
+          persist-credentials: true
+
+      - name: Verify project
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -d Assets
+          test -f ProjectSettings/ProjectVersion.txt
+          mkdir -p reports
+
+      - name: Download original PC archive
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/records/game" "$RUNNER_TEMP/records/download"
+          gh release download 0.0.1 --repo "$GITHUB_REPOSITORY" \
+            --pattern 'Slendytubbies.0.Records.zip' \
+            --dir "$RUNNER_TEMP/records/download"
+          unzip -q "$RUNNER_TEMP/records/download/Slendytubbies.0.Records.zip" \
+            -d "$RUNNER_TEMP/records/game"
+          dll="$(find "$RUNNER_TEMP/records/game" -type f \
+            -name Assembly-CSharp.dll -print -quit)"
+          test -n "$dll" || {
+            echo 'Original Mono DLL is missing' >&2
+            exit 1
+          }
+          echo "MANAGED_DIR=$(dirname "$dll")" >> "$GITHUB_ENV"
+
+      - name: Install .NET and ILSpy
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Decompile original C sharp assemblies
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet tool install ilspycmd \
+            --tool-path "$RUNNER_TEMP/records/tools" \
+            --version 9.1.0.7988
+
+          mkdir -p "$RUNNER_TEMP/records/code"
+          count=0
+
+          while IFS= read -r -d '' dll; do
+            base="$(basename "$dll" .dll)"
+            case "$base" in
+              Unity*|System*|Microsoft*|Mono*|mscorlib|netstandard|Newtonsoft*)
+                continue ;;
+            esac
+
+            echo "Examining original assembly: $base"
+            mkdir -p "$RUNNER_TEMP/records/code/$base"
+
+            if "$RUNNER_TEMP/records/tools/ilspycmd" \
+              --project \
+              --outputdir "$RUNNER_TEMP/records/code/$base" \
+              --referencepath "$MANAGED_DIR" \
+              "$dll" > "$RUNNER_TEMP/records/$base.log" 2>&1; then
+              count=$((count + 1))
+            else
+              echo "Could not decompile $base"
+              tail -5 "$RUNNER_TEMP/records/$base.log" || true
+            fi
+
+          done < <(find "$MANAGED_DIR" -maxdepth 1 \
+            -type f -name '*.dll' -print0)
+
+          test "$count" -gt 0 || {
+            echo 'No DLL was decompiled' >&2
+            exit 1
+          }
+          echo "Decompiled $count original assemblies"
+
+      - name: Restore matching dummy scripts without changing GUIDs
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          from collections import defaultdict, Counter
+          import csv, os, re
+
+          assets = Path('Assets')
+          code = Path(os.environ['RUNNER_TEMP']) / 'records/code'
+          sources = defaultdict(list)
+
+          for file in code.rglob('*.cs'):
+              sources[file.name.casefold()].append(file)
+
+          rows = []
+          for target in assets.rglob('*.cs'):
+              old = target.read_text(
+                  encoding='utf-8-sig',
+                  errors='replace'
+              )
+              if 'Dummy class. This could have happened' not in old:
+                  continue
+
+              options = sources[target.name.casefold()]
+              status = 'unresolved'
+              reason = f'{len(options)} filename matches'
+
+              if len(options) == 1:
+                  replacement = options[0].read_text(
+                      encoding='utf-8-sig',
+                      errors='replace'
+                  )
+                  declaration = (
+                      r'\b(?:class|struct|interface|enum)\s+' +
+                      re.escape(target.stem) + r'\b'
+                  )
+                  if (re.search(declaration, replacement)
+                          and len(replacement.strip()) > 100):
+                      target.write_text(replacement, encoding='utf-8')
+                      status = 'restored'
+                      reason = str(options[0].relative_to(code))
+                  else:
+                      reason = 'decompiled source missing expected type'
+
+              rows.append((str(target), status, reason))
+
+          with Path('reports/scripts-fix2.csv').open(
+              'w', newline='', encoding='utf-8'
+          ) as handle:
+              writer = csv.writer(handle)
+              writer.writerow(['script', 'status', 'reason'])
+              writer.writerows(rows)
+
+          terminal = []
+          pattern = re.compile(
+              r'\b(?:password|terminal|command|record[0-9]|login)\b',
+              re.I
+          )
+
+          for file in assets.rglob('*.cs'):
+              content = file.read_text(
+                  encoding='utf-8-sig',
+                  errors='replace'
+              )
+              if pattern.search(file.name) or pattern.search(content):
+                  terminal.append(str(file))
+
+          Path('reports/terminal-script-files.txt').write_text(
+              '\n'.join(terminal[:250]) + '\n',
+              encoding='utf-8'
+          )
+
+          counts = Counter(status for _, status, _ in rows)
+          summary = [
+              'Records - original gameplay script recovery, Fix 2',
+              f'Original decompiled C# files: {sum(len(v) for v in sources.values())}',
+              f'Dummy scripts examined: {len(rows)}',
+              f'Newly restored: {counts["restored"]}',
+              f'Still unresolved: {counts["unresolved"]}',
+              f'Terminal-related code files found: {len(terminal)}',
+              'Unresolved count does not necessarily equal missing gameplay scripts.',
+              'Scenes, animations, controls, and terminal are not verified.',
+              'This is not an iOS build.'
+          ]
+
+          Path('reports/summary-fix2.txt').write_text(
+              '\n'.join(summary) + '\n',
+              encoding='utf-8'
+          )
+          print('\n'.join(summary))
+          PY
+
+      - name: Save to a NEW branch only
+        shell: bash
+        run: |
+          set -euo pipefail
+          branch="records-code-fix2-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}"
+          git switch -c "$branch"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+
+          git add Assets reports/scripts-fix2.csv \
+            reports/terminal-script-files.txt reports/summary-fix2.txt
+
+          git commit -m 'Recover additional original Records scripts and audit terminal'
+          git push -u origin "$branch"
+
+          {
+            echo "### Created branch: $branch"
+            cat reports/summary-fix2.txt
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Records-Code-Fix2-Report
+          path: reports/
+          retention-days: 14
+          if-no-files-found: warn
