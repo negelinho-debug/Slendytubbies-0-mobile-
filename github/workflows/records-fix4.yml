@@ -1,0 +1,220 @@
+
+name: Records Fix 4 - Story First
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_branch:
+        description: 'Branch from successful Fix 3'
+        required: true
+        default: 'records-code-fix3-1-1'
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  story-first:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Keep recovered game code private
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [ "$(gh api "repos/$GITHUB_REPOSITORY" --jq '.private')" != 'true' ]; then
+            echo 'ERROR: Make the repository PRIVATE before restoring game code.' >&2
+            exit 1
+          fi
+
+      - name: Checkout recovered Fix 3 project
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_branch }}
+          lfs: true
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Check Unity files
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -d Assets
+          test -f ProjectSettings/ProjectVersion.txt
+          mkdir -p reports
+
+      - name: Download original game DLL
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/records-original" "$RUNNER_TEMP/records-download"
+          gh release download 0.0.1 --repo "$GITHUB_REPOSITORY" \
+            --pattern 'Slendytubbies.0.Records.zip' \
+            --dir "$RUNNER_TEMP/records-download"
+          unzip -q "$RUNNER_TEMP/records-download/Slendytubbies.0.Records.zip" \
+            -d "$RUNNER_TEMP/records-original"
+          dll="$(find "$RUNNER_TEMP/records-original" -type f \
+            -name 'Assembly-CSharp.dll' -print -quit)"
+          test -n "$dll" || { echo 'Original Mono DLL not found'; exit 1; }
+          echo "GAME_DLL=$dll" >> "$GITHUB_ENV"
+
+      - name: Install .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Decompile original code with ILSpy
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet tool install ilspycmd --tool-path "$RUNNER_TEMP/ilspy" \
+            --version 9.1.0.7988
+          mkdir -p "$RUNNER_TEMP/records-code"
+          "$RUNNER_TEMP/ilspy/ilspycmd" --project --nested-directories \
+            --outputdir "$RUNNER_TEMP/records-code" \
+            --referencepath "$(dirname "$GAME_DLL")" "$GAME_DLL"
+
+      - name: Restore only important referenced scripts and report problems
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import csv, os, re
+          from collections import Counter, defaultdict
+          from pathlib import Path
+
+          assets = Path('Assets')
+          code = Path(os.environ['RUNNER_TEMP']) / 'records-code'
+          marker = 'Dummy class. This could have happened'
+          keywords = re.compile(
+              r'player|camera|input|control|terminal|password|login|record|'
+              r'level|scene|chapter|dialog|cutscene|timeline|save|load|'
+              r'game.?manager|menu|inventory|interact|door|enemy|monster|'
+              r'animation|movement|quest|trigger', re.I)
+          script_ref = re.compile(
+              r'm_Script\s*:\s*\{[^}]*?guid\s*:\s*([0-9a-fA-F]{32})', re.S)
+          guid_line = re.compile(r'^guid:\s*([0-9a-fA-F]{32})\s*$', re.M)
+          ns_pattern = re.compile(r'\bnamespace\s+([\w.]+)\s*(?:\{|;)')
+
+          used = Counter()
+          scanned_files = 0
+          for pattern in ('*.unity', '*.prefab', '*.asset', '*.controller'):
+              for f in assets.rglob(pattern):
+                  try:
+                      text = f.read_text(encoding='utf-8-sig', errors='replace')
+                  except OSError:
+                      continue
+                  scanned_files += 1
+                  used.update(x.lower() for x in script_ref.findall(text))
+
+          scripts_by_guid = {}
+          for meta in assets.rglob('*.cs.meta'):
+              try:
+                  content = meta.read_text(encoding='utf-8-sig', errors='replace')
+              except OSError:
+                  continue
+              match = guid_line.search(content)
+              target = Path(str(meta)[:-5])
+              if match and target.is_file():
+                  scripts_by_guid[match.group(1).lower()] = target
+
+          code_by_name = defaultdict(list)
+          for f in code.rglob('*.cs'):
+              if f.name.lower() != 'assemblyinfo.cs':
+                  code_by_name[f.name.lower()].append(f)
+
+          rows = []
+          for target in assets.rglob('*.cs'):
+              original = target.read_text(encoding='utf-8-sig', errors='replace')
+              if marker not in original:
+                  continue
+              meta = Path(str(target) + '.meta')
+              guid = ''
+              if meta.exists():
+                  match = guid_line.search(meta.read_text(errors='replace'))
+                  if match:
+                      guid = match.group(1).lower()
+              references = used.get(guid, 0)
+              priority = references > 0 or bool(keywords.search(target.stem))
+              if not priority:
+                  rows.append((str(target), references, 'DEFERRED', 'not referenced or named critical'))
+                  continue
+              old_ns_match = ns_pattern.search(original)
+              old_ns = old_ns_match.group(1) if old_ns_match else ''
+              matches = []
+              for source in code_by_name.get(target.name.lower(), []):
+                  body = source.read_text(encoding='utf-8-sig', errors='replace')
+                  declaration = r'\b(?:class|struct|interface|enum)\s+' + re.escape(target.stem) + r'\b'
+                  new_ns_match = ns_pattern.search(body)
+                  new_ns = new_ns_match.group(1) if new_ns_match else ''
+                  if (re.search(declaration, body) and new_ns == old_ns
+                          and marker not in body and len(body.strip()) > 100):
+                      matches.append(body)
+              if len(matches) == 1:
+                  target.write_text(matches[0], encoding='utf-8')
+                  rows.append((str(target), references, 'RESTORED', 'exact type and namespace'))
+              else:
+                  rows.append((str(target), references, 'NEEDS_REVIEW', f'{len(matches)} safe matches'))
+
+          unresolved_guid = [(g, n) for g, n in used.items()
+                             if g not in scripts_by_guid and g != '0' * 32]
+          with open('reports/fix4-priority-scripts.csv', 'w', newline='', encoding='utf-8') as f:
+              out = csv.writer(f)
+              out.writerow(['script', 'references', 'status', 'detail'])
+              out.writerows(sorted(rows, key=lambda r: (-r[1], r[0])))
+          with open('reports/fix4-missing-script-guids.csv', 'w', newline='', encoding='utf-8') as f:
+              out = csv.writer(f)
+              out.writerow(['guid', 'references'])
+              out.writerows(sorted(unresolved_guid, key=lambda r: -r[1]))
+
+          counts = Counter(r[2] for r in rows)
+          important_unresolved = [r for r in rows if r[2] == 'NEEDS_REVIEW']
+          report = [
+              'Records Fix 4 - Story First',
+              f'Unity serialized files examined: {scanned_files}',
+              f'Unique referenced script GUIDs: {len(used)}',
+              f'Important dummy scripts safely restored: {counts["RESTORED"]}',
+              f'Important dummy scripts still needing review: {counts["NEEDS_REVIEW"]}',
+              f'Other dummy scripts intentionally deferred: {counts["DEFERRED"]}',
+              f'Missing script GUIDs from scene/prefab data: {len(unresolved_guid)}',
+              'Existing .cs.meta GUIDs unchanged.',
+              'Original terminal commands/passwords not modified.',
+              'Existing iPhone runtime logger not removed.',
+              'This is an audit and recovery step, not a Unity compilation or IPA build.',
+              '',
+              'Highest priority unresolved scripts:'
+          ]
+          report.extend(f'  {r[0]} ({r[1]} references)' for r in
+                        sorted(important_unresolved, key=lambda x: -x[1])[:30])
+          if not used:
+              report.append('WARNING: No m_Script GUID references found; inspect scene serialization.')
+          Path('reports/fix4-summary.txt').write_text('\n'.join(report) + '\n', encoding='utf-8')
+          print('\n'.join(report))
+          PY
+
+      - name: Save into a new branch without changing Fix 3
+        shell: bash
+        run: |
+          set -euo pipefail
+          branch="records-story-fix4-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}"
+          git switch -c "$branch"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add Assets reports/fix4-*.csv reports/fix4-summary.txt
+          git commit -m 'Prioritize original Records story scripts and audit scene references'
+          git push -u origin "$branch"
+          echo "### New branch: $branch" >> "$GITHUB_STEP_SUMMARY"
+          cat reports/fix4-summary.txt >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Records-Fix4-Story-Reports
+          path: reports/fix4-*
+          retention-days: 14
+          if-no-files-found: warn
