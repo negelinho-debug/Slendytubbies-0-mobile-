@@ -1,0 +1,276 @@
+
+name: Records - Full Recovery with iPhone Log
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  recover:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    steps:
+      - name: Require private repository
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(gh api "repos/$GITHUB_REPOSITORY" --jq '.private')" = true || {
+            echo 'Make the repository PRIVATE before restoring game files.'
+            exit 1
+          }
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Download original Records ZIP
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/records/game" "$RUNNER_TEMP/records/download"
+          gh release download 0.0.1 --repo "$GITHUB_REPOSITORY" \
+            --pattern 'Slendytubbies.0.Records.zip' \
+            --dir "$RUNNER_TEMP/records/download"
+          unzip -q "$RUNNER_TEMP/records/download/Slendytubbies.0.Records.zip" \
+            -d "$RUNNER_TEMP/records/game"
+          managers="$(find "$RUNNER_TEMP/records/game" -type f \
+            -name globalgamemanagers -print -quit)"
+          test -n "$managers"
+          echo "GAME_ROOT=$(dirname "$(dirname "$managers")")" >> "$GITHUB_ENV"
+          dll="$(find "$RUNNER_TEMP/records/game" -type f \
+            -name Assembly-CSharp.dll -print -quit)"
+          if [ -n "$dll" ]; then
+            echo "GAME_DLL=$dll" >> "$GITHUB_ENV"
+          else
+            echo 'No Mono Assembly-CSharp.dll; check whether game uses IL2CPP.'
+          fi
+
+      - name: Install .NET 8 and 9
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            9.0.x
+
+      - name: Export original Unity resources and scenes
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p reports "$RUNNER_TEMP/records/export"
+          git clone --depth 1 https://github.com/nowl-it/AssetRipperCLI.git \
+            "$RUNNER_TEMP/records/ripper-src"
+          dotnet publish \
+            "$RUNNER_TEMP/records/ripper-src/Source/AssetRipper.GUI.Free/AssetRipper.GUI.Free.csproj" \
+            -c Release -r linux-x64 --self-contained true \
+            -p:PublishAot=false -o "$RUNNER_TEMP/records/ripper-bin"
+          set +e
+          dotnet "$RUNNER_TEMP/records/ripper-bin/AssetRipper.GUI.Free.dll" \
+            --cli --input "$GAME_ROOT" \
+            --output "$RUNNER_TEMP/records/export" \
+            --mode Unity --script-content-level Level0 \
+            > reports/assetripper.log 2>&1
+          status=$?
+          set -e
+          tail -50 reports/assetripper.log || true
+          test "$status" -eq 0
+          version="$(find "$RUNNER_TEMP/records/export" -type f \
+            -path '*/ProjectSettings/ProjectVersion.txt' -print -quit)"
+          test -n "$version"
+          echo "RECOVERED_PROJECT=$(dirname "$(dirname "$version")")" >> "$GITHUB_ENV"
+
+      - name: Decompile gameplay DLL when available
+        if: env.GAME_DLL != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet tool install ilspycmd \
+            --tool-path "$RUNNER_TEMP/records/tools" --version 9.1.0.7988
+          mkdir -p "$RUNNER_TEMP/records/code"
+          "$RUNNER_TEMP/records/tools/ilspycmd" \
+            --project --outputdir "$RUNNER_TEMP/records/code" \
+            --referencepath "$(dirname "$GAME_DLL")" "$GAME_DLL"
+
+      - name: Keep original scripts and terminal data; audit recovery
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          from collections import defaultdict
+          import csv, os, re
+          project = Path(os.environ['RECOVERED_PROJECT'])
+          code = Path(os.environ['RUNNER_TEMP']) / 'records/code'
+          sources = defaultdict(list)
+          if code.exists():
+              for f in code.rglob('*.cs'):
+                  sources[f.name.casefold()].append(f)
+          changes = []
+          for f in (project / 'Assets').rglob('*.cs'):
+              text = f.read_text(encoding='utf-8-sig', errors='replace')
+              if 'Dummy class. This could have happened' not in text:
+                  continue
+              candidates = sources.get(f.name.casefold(), [])
+              if len(candidates) == 1:
+                  replacement = candidates[0].read_text(encoding='utf-8-sig', errors='replace')
+                  if len(replacement.strip()) > 100:
+                      f.write_text(replacement, encoding='utf-8')
+                      changes.append((str(f.relative_to(project)), 'restored'))
+                      continue
+              changes.append((str(f.relative_to(project)), 'unresolved'))
+          with Path('reports/scripts.csv').open('w', newline='') as handle:
+              writer = csv.writer(handle)
+              writer.writerow(['script', 'status'])
+              writer.writerows(changes)
+          assets = project / 'Assets'
+          count = lambda pattern: sum(1 for _ in assets.rglob(pattern))
+          candidates = [str(f.relative_to(project)) for f in assets.rglob('*')
+                        if f.is_file() and re.search(r'terminal|password|record|code|login', f.name, re.I)]
+          Path('reports/terminal-file-candidates.txt').write_text('\n'.join(candidates[:500]) + '\n')
+          report = [
+              'Slendytubbies 0: Records recovery',
+              'Original game code: ' + ('Mono DLL found' if os.getenv('GAME_DLL') else 'Mono DLL not found'),
+              'Unity project version: ' + (project/'ProjectSettings/ProjectVersion.txt').read_text(errors='replace').strip(),
+              f'Scenes: {count("*.unity")}',
+              f'Animation files: {count("*.anim")}',
+              f'Animator controllers: {count("*.controller")}',
+              f'C# scripts: {count("*.cs")}',
+              f'Dummy scripts replaced: {sum(s == "restored" for _, s in changes)}',
+              f'Dummy scripts unresolved: {sum(s == "unresolved" for _, s in changes)}',
+              f'Terminal-related candidate files: {len(candidates)}',
+              'Original terminal commands/passwords are NOT replaced or invented.',
+              'WARNING: Export success does not prove that the game or terminal works on iOS.'
+          ]
+          Path('reports/summary.txt').write_text('\n'.join(report) + '\n')
+          print('\n'.join(report))
+          PY
+
+      - name: Prepare clean Unity project in this repository
+        shell: bash
+        run: |
+          set -euo pipefail
+          branch="records-full-recovery-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}"
+          git switch -c "$branch"
+          mkdir -p Assets ProjectSettings Packages Assets/Scripts Assets/Editor
+          cp -a "$RECOVERED_PROJECT/Assets/." Assets/
+          cp -a "$RECOVERED_PROJECT/ProjectSettings/." ProjectSettings/
+          if [ -d "$RECOVERED_PROJECT/Packages" ]; then
+            cp -a "$RECOVERED_PROJECT/Packages/." Packages/
+          fi
+          cat > .gitignore <<'EOF'
+          /Library/
+          /Temp/
+          /Logs/
+          /Obj/
+          /Build/
+          /Builds/
+          /UserSettings/
+          EOF
+
+      - name: Add temporary runtime log for iPhone Files
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > Assets/Scripts/RecordsRuntimeLog.cs <<'CS'
+          using System;
+          using System.IO;
+          using UnityEngine;
+
+          public static class RecordsRuntimeLog
+          {
+              private static readonly object Gate = new object();
+              private static string logPath;
+
+              [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
+              private static void StartLogging()
+              {
+                  try
+                  {
+                      logPath = Path.Combine(Application.persistentDataPath,
+                          "RecordsDebug.txt");
+                      File.AppendAllText(logPath,
+                          "\n===== Records launch " + DateTime.UtcNow.ToString("u") + " =====\n");
+                      Application.logMessageReceivedThreaded += OnLog;
+                  }
+                  catch { /* Logging must not stop the game. */ }
+              }
+
+              private static void OnLog(string message, string stack, LogType type)
+              {
+                  if (string.IsNullOrEmpty(logPath)) return;
+                  try
+                  {
+                      lock (Gate)
+                      {
+                          if (File.Exists(logPath) &&
+                              new FileInfo(logPath).Length > 2 * 1024 * 1024)
+                              File.WriteAllText(logPath, "[Previous log truncated]\n");
+                          File.AppendAllText(logPath,
+                              "[" + DateTime.UtcNow.ToString("HH:mm:ss") + "] " +
+                              type + ": " + message + "\n" +
+                              (type == LogType.Error || type == LogType.Exception ||
+                               type == LogType.Assert ? stack + "\n" : ""));
+                      }
+                  }
+                  catch { /* Do not recursively log an I/O error. */ }
+              }
+          }
+          CS
+          cat > Assets/Editor/RecordsFilesAccess.cs <<'CS'
+          #if UNITY_EDITOR && UNITY_IOS
+          using System.IO;
+          using UnityEditor;
+          using UnityEditor.Callbacks;
+          using UnityEditor.iOS.Xcode;
+
+          public static class RecordsFilesAccess
+          {
+              [PostProcessBuild(100)]
+              public static void EnableFiles(BuildTarget target, string output)
+              {
+                  if (target != BuildTarget.iOS) return;
+                  var path = Path.Combine(output, "Info.plist");
+                  var plist = new PlistDocument();
+                  plist.ReadFromFile(path);
+                  plist.root.SetBoolean("UIFileSharingEnabled", true);
+                  plist.root.SetBoolean("LSSupportsOpeningDocumentsInPlace", true);
+                  plist.WriteToFile(path);
+              }
+          }
+          #endif
+          CS
+
+      - name: Commit private Unity Cloud branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git lfs install --local
+          while IFS= read -r -d '' file; do
+            git lfs track --filename "$file"
+          done < <(find Assets Packages ProjectSettings -type f -size +45M -print0)
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add Assets ProjectSettings reports/summary.txt \
+            reports/scripts.csv reports/terminal-file-candidates.txt .gitignore
+          if [ -n "$(find Packages -type f -print -quit)" ]; then git add Packages; fi
+          if [ -f .gitattributes ]; then git add .gitattributes; fi
+          git commit -m 'Records original recovery + temporary iPhone Files logger'
+          git push origin HEAD
+          echo "### Unity Cloud source branch: $(git branch --show-current)" >> "$GITHUB_STEP_SUMMARY"
+          cat reports/summary.txt >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload recovery reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Records-Recovery-Diagnostics
+          path: reports/
+          retention-days: 14
+          if-no-files-found: warn
