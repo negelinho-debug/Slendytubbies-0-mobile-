@@ -1,66 +1,135 @@
+using System.Collections.Generic;
 using UnityEngine;
 
-namespace FMODUnity
+namespace FMODUnity;
+
+[AddComponentMenu("FMOD Studio/FMOD Studio Listener")]
+public class StudioListener : MonoBehaviour
 {
-	public class StudioListener : MonoBehaviour
+	[SerializeField]
+	private bool nonRigidbodyVelocity;
+
+	[SerializeField]
+	private GameObject attenuationObject;
+
+	private Vector3 lastFramePosition = Vector3.zero;
+
+	private Rigidbody rigidBody;
+
+	private Rigidbody2D rigidBody2D;
+
+	private static List<StudioListener> listeners = new List<StudioListener>();
+
+	public GameObject AttenuationObject
 	{
-		/*
-		Dummy class. This could have happened for several reasons:
+		get
+		{
+			return attenuationObject;
+		}
+		set
+		{
+			attenuationObject = value;
+		}
+	}
 
-		1. No dll files were provided to AssetRipper.
+	public static int ListenerCount => listeners.Count;
 
-			Unity asset bundles and serialized files do not contain script information to decompile.
-				* For Mono games, that information is contained in .NET dll files.
-				* For Il2Cpp games, that information is contained in compiled C++ assemblies and the global metadata.
-				
-			AssetRipper usually expects games to conform to a normal file structure for Unity games of that platform.
-			A unexpected file structure could cause AssetRipper to not find the required files.
+	public int ListenerNumber => listeners.IndexOf(this);
 
-		2. Incorrect dll files were provided to AssetRipper.
+	public static float DistanceToNearestListener(Vector3 position)
+	{
+		float num = float.MaxValue;
+		for (int i = 0; i < listeners.Count; i++)
+		{
+			num = ((!(listeners[i].attenuationObject == null)) ? Mathf.Min(num, Vector3.Distance(position, listeners[i].attenuationObject.transform.position)) : Mathf.Min(num, Vector3.Distance(position, listeners[i].transform.position)));
+		}
+		return num;
+	}
 
-			Any of the following could cause this:
-				* Il2CppInterop assemblies
-				* Deobfuscated assemblies
-				* Older assemblies (compared to when the bundle was built)
-				* Newer assemblies (compared to when the bundle was built)
+	public static float DistanceSquaredToNearestListener(Vector3 position)
+	{
+		float num = float.MaxValue;
+		for (int i = 0; i < listeners.Count; i++)
+		{
+			num = ((!(listeners[i].attenuationObject == null)) ? Mathf.Min(num, (position - listeners[i].attenuationObject.transform.position).sqrMagnitude) : Mathf.Min(num, (position - listeners[i].transform.position).sqrMagnitude));
+		}
+		return num;
+	}
 
-			Note: Although assembly publicizing is bad, it alone cannot cause empty scripts. See: https://github.com/AssetRipper/AssetRipper/issues/653
+	private static void AddListener(StudioListener listener)
+	{
+		if (listeners.Contains(listener))
+		{
+			Debug.LogWarning($"[FMOD] Listener has already been added at index {listener.ListenerNumber}.");
+			return;
+		}
+		if (listeners.Count >= 8)
+		{
+			Debug.LogWarning($"[FMOD] Max number of listeners reached : {8}.");
+		}
+		listeners.Add(listener);
+		RuntimeManager.StudioSystem.setNumListeners(Mathf.Clamp(listeners.Count, 1, 8));
+	}
 
-		3. Assembly Reconstruction has not been implemented.
+	private static void RemoveListener(StudioListener listener)
+	{
+		listeners.Remove(listener);
+		RuntimeManager.StudioSystem.setNumListeners(Mathf.Clamp(listeners.Count, 1, 8));
+	}
 
-			Asset bundles contain a small amount of information about the script content.
-			This information can be used to recover the serializable fields of a script.
+	private void OnEnable()
+	{
+		RuntimeUtils.EnforceLibraryOrder();
+		rigidBody = base.gameObject.GetComponent<Rigidbody>();
+		if (nonRigidbodyVelocity && (bool)rigidBody)
+		{
+			Debug.LogWarning($"[FMOD] Non-Rigidbody Velocity is enabled on Listener attached to GameObject \"{base.name}\", which also has a Rigidbody component attached - this will be disabled in favor of velocity from Rigidbody component.");
+			nonRigidbodyVelocity = false;
+		}
+		rigidBody2D = base.gameObject.GetComponent<Rigidbody2D>();
+		if (nonRigidbodyVelocity && (bool)rigidBody2D)
+		{
+			Debug.LogWarning($"[FMOD] Non-Rigidbody Velocity is enabled on Listener attached to GameObject \"{base.name}\", which also has a Rigidbody2D component attached - this will be disabled in favor of velocity from Rigidbody2D component.");
+			nonRigidbodyVelocity = false;
+		}
+		AddListener(this);
+		lastFramePosition = base.transform.position;
+	}
 
-			See: https://github.com/AssetRipper/AssetRipper/issues/655
-	
-		4. This script is unnecessary.
+	private void OnDisable()
+	{
+		RemoveListener(this);
+	}
 
-			If this script has no asset or script references, it can be deleted.
-			Be sure to resolve any compile errors before deleting because they can hide references.
-
-		5. Script Content Level 0
-
-			AssetRipper was set to not load any script information.
-
-		6. Cpp2IL failed to decompile Il2Cpp data
-
-			If this happened, there will be errors in the AssetRipper.log indicating that it happened.
-			This is an upstream problem, and the AssetRipper developer has very little control over it.
-			Please post a GitHub issue at: https://github.com/SamboyCoding/Cpp2IL/issues
-
-		7. An incorrect path was provided to AssetRipper.
-
-			This is characterized by "Mixed game structure has been found at" in the AssetRipper.log file.
-			AssetRipper expects games to conform to a normal file structure for Unity games of that platform.
-			An unexpected file structure could cause AssetRipper to not find the required files for script decompilation.
-			Generally, AssetRipper expects users to provide the root folder of the game. For example:
-				* Windows: the folder containing the game's .exe file
-				* Mac: the .app file/folder
-				* Linux: the folder containing the game's executable file
-				* Android: the apk file
-				* iOS: the ipa file
-				* Switch: the folder containing exefs and romfs
-
-		*/
+	private void Update()
+	{
+		if (ListenerNumber < 0 || ListenerNumber >= 8)
+		{
+			return;
+		}
+		if (nonRigidbodyVelocity)
+		{
+			Vector3 velocity = Vector3.zero;
+			Vector3 position = base.transform.position;
+			if (Time.deltaTime != 0f)
+			{
+				velocity = (position - lastFramePosition) / Time.deltaTime;
+				velocity = Vector3.ClampMagnitude(velocity, 20f);
+			}
+			lastFramePosition = position;
+			RuntimeManager.SetListenerLocation(ListenerNumber, base.gameObject, attenuationObject, velocity);
+		}
+		else if ((bool)rigidBody)
+		{
+			RuntimeManager.SetListenerLocation(ListenerNumber, base.gameObject, rigidBody, attenuationObject);
+		}
+		else if ((bool)rigidBody2D)
+		{
+			RuntimeManager.SetListenerLocation(ListenerNumber, base.gameObject, rigidBody2D, attenuationObject);
+		}
+		else
+		{
+			RuntimeManager.SetListenerLocation(ListenerNumber, base.gameObject, attenuationObject);
+		}
 	}
 }

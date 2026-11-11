@@ -1,66 +1,22 @@
-using UnityEngine;
+namespace RetroTVFX;
 
-namespace RetroTVFX
+public static class FilterTaps
 {
-	public class FilterTaps : MonoBehaviour
+	public static readonly float[] lumaFilter8Tap = new float[9] { -0.002f, -0.0009f, 0.0038f, 0.0178f, 0.0445f, 0.0817f, 0.1214f, 0.1519f, 0.1634f };
+
+	public static readonly float[] chromaFilter8Tap = new float[9] { 0.0046f, 0.0082f, 0.0182f, 0.0353f, 0.0501f, 0.0832f, 0.1062f, 0.1222f, 0.128f };
+
+	public static readonly float[] lumaFilter24Taps = new float[25]
 	{
-		/*
-		Dummy class. This could have happened for several reasons:
+		-1.202E-05f, -2.2146E-05f, -1.3155E-05f, -1.202E-05f, -4.9979E-05f, -0.00011394f, -0.00012215f, -5.612E-06f, 0.000170516f, 0.000237199f,
+		0.00016964f, 0.000285688f, 0.000984574f, 0.002018683f, 0.002002275f, -0.000909882f, -0.007049081f, -0.01322286f, -0.012606931f, 0.00246086f,
+		0.035868224f, 0.08401645f, 0.1355635f, 0.17526127f, 0.19017655f
+	};
 
-		1. No dll files were provided to AssetRipper.
-
-			Unity asset bundles and serialized files do not contain script information to decompile.
-				* For Mono games, that information is contained in .NET dll files.
-				* For Il2Cpp games, that information is contained in compiled C++ assemblies and the global metadata.
-				
-			AssetRipper usually expects games to conform to a normal file structure for Unity games of that platform.
-			A unexpected file structure could cause AssetRipper to not find the required files.
-
-		2. Incorrect dll files were provided to AssetRipper.
-
-			Any of the following could cause this:
-				* Il2CppInterop assemblies
-				* Deobfuscated assemblies
-				* Older assemblies (compared to when the bundle was built)
-				* Newer assemblies (compared to when the bundle was built)
-
-			Note: Although assembly publicizing is bad, it alone cannot cause empty scripts. See: https://github.com/AssetRipper/AssetRipper/issues/653
-
-		3. Assembly Reconstruction has not been implemented.
-
-			Asset bundles contain a small amount of information about the script content.
-			This information can be used to recover the serializable fields of a script.
-
-			See: https://github.com/AssetRipper/AssetRipper/issues/655
-	
-		4. This script is unnecessary.
-
-			If this script has no asset or script references, it can be deleted.
-			Be sure to resolve any compile errors before deleting because they can hide references.
-
-		5. Script Content Level 0
-
-			AssetRipper was set to not load any script information.
-
-		6. Cpp2IL failed to decompile Il2Cpp data
-
-			If this happened, there will be errors in the AssetRipper.log indicating that it happened.
-			This is an upstream problem, and the AssetRipper developer has very little control over it.
-			Please post a GitHub issue at: https://github.com/SamboyCoding/Cpp2IL/issues
-
-		7. An incorrect path was provided to AssetRipper.
-
-			This is characterized by "Mixed game structure has been found at" in the AssetRipper.log file.
-			AssetRipper expects games to conform to a normal file structure for Unity games of that platform.
-			An unexpected file structure could cause AssetRipper to not find the required files for script decompilation.
-			Generally, AssetRipper expects users to provide the root folder of the game. For example:
-				* Windows: the folder containing the game's .exe file
-				* Mac: the .app file/folder
-				* Linux: the folder containing the game's executable file
-				* Android: the apk file
-				* iOS: the ipa file
-				* Switch: the folder containing exefs and romfs
-
-		*/
-	}
+	public static readonly float[] chromaFilter24Taps = new float[25]
+	{
+		-0.000118847f, -0.000271306f, -0.000502642f, -0.000930833f, -0.001451013f, -0.002064744f, -0.002700432f, -0.003241276f, -0.003524948f, -0.003350284f,
+		-0.002491729f, -0.000721149f, 0.002164659f, 0.006313635f, 0.011789103f, 0.01854566f, 0.026414396f, 0.03510071f, 0.04419657f, 0.053207204f,
+		0.061590277f, 0.0688036f, 0.07435619f, 0.07785656f, 0.079052396f
+	};
 }

@@ -1,66 +1,354 @@
-using UnityEngine;
+using System;
+using System.Runtime.ExceptionServices;
+using System.Threading;
+using Cysharp.Threading.Tasks.Internal;
 
-namespace Cysharp.Threading.Tasks.Linq
+namespace Cysharp.Threading.Tasks.Linq;
+
+internal static class Aggregate
 {
-	public class Aggregate : MonoBehaviour
+	internal static async UniTask<TSource> AggregateAsync<TSource>(IUniTaskAsyncEnumerable<TSource> source, Func<TSource, TSource, TSource> accumulator, CancellationToken cancellationToken)
 	{
-		/*
-		Dummy class. This could have happened for several reasons:
+		IUniTaskAsyncEnumerator<TSource> e = source.GetAsyncEnumerator(cancellationToken);
+		object obj = null;
+		int num = 0;
+		TSource result = default(TSource);
+		try
+		{
+			if (!(await e.MoveNextAsync()))
+			{
+				throw Error.NoElements();
+			}
+			TSource value = e.Current;
+			while (await e.MoveNextAsync())
+			{
+				value = accumulator(value, e.Current);
+			}
+			result = value;
+			num = 1;
+		}
+		catch (object obj2)
+		{
+			obj = obj2;
+		}
+		if (e != null)
+		{
+			await e.DisposeAsync();
+		}
+		object obj3 = obj;
+		if (obj3 != null)
+		{
+			ExceptionDispatchInfo.Capture((obj3 as Exception) ?? throw obj3).Throw();
+		}
+		if (num == 1)
+		{
+			return result;
+		}
+		TSource result2 = default(TSource);
+		return result2;
+	}
 
-		1. No dll files were provided to AssetRipper.
+	internal static async UniTask<TAccumulate> AggregateAsync<TSource, TAccumulate>(IUniTaskAsyncEnumerable<TSource> source, TAccumulate seed, Func<TAccumulate, TSource, TAccumulate> accumulator, CancellationToken cancellationToken)
+	{
+		IUniTaskAsyncEnumerator<TSource> e = source.GetAsyncEnumerator(cancellationToken);
+		object obj = null;
+		int num = 0;
+		TAccumulate result = default(TAccumulate);
+		try
+		{
+			TAccumulate value = seed;
+			while (await e.MoveNextAsync())
+			{
+				value = accumulator(value, e.Current);
+			}
+			result = value;
+			num = 1;
+		}
+		catch (object obj2)
+		{
+			obj = obj2;
+		}
+		if (e != null)
+		{
+			await e.DisposeAsync();
+		}
+		object obj3 = obj;
+		if (obj3 != null)
+		{
+			ExceptionDispatchInfo.Capture((obj3 as Exception) ?? throw obj3).Throw();
+		}
+		if (num == 1)
+		{
+			return result;
+		}
+		TAccumulate result2 = default(TAccumulate);
+		return result2;
+	}
 
-			Unity asset bundles and serialized files do not contain script information to decompile.
-				* For Mono games, that information is contained in .NET dll files.
-				* For Il2Cpp games, that information is contained in compiled C++ assemblies and the global metadata.
-				
-			AssetRipper usually expects games to conform to a normal file structure for Unity games of that platform.
-			A unexpected file structure could cause AssetRipper to not find the required files.
+	internal static async UniTask<TResult> AggregateAsync<TSource, TAccumulate, TResult>(IUniTaskAsyncEnumerable<TSource> source, TAccumulate seed, Func<TAccumulate, TSource, TAccumulate> accumulator, Func<TAccumulate, TResult> resultSelector, CancellationToken cancellationToken)
+	{
+		IUniTaskAsyncEnumerator<TSource> e = source.GetAsyncEnumerator(cancellationToken);
+		object obj = null;
+		int num = 0;
+		TResult result = default(TResult);
+		try
+		{
+			TAccumulate value = seed;
+			while (await e.MoveNextAsync())
+			{
+				value = accumulator(value, e.Current);
+			}
+			result = resultSelector(value);
+			num = 1;
+		}
+		catch (object obj2)
+		{
+			obj = obj2;
+		}
+		if (e != null)
+		{
+			await e.DisposeAsync();
+		}
+		object obj3 = obj;
+		if (obj3 != null)
+		{
+			ExceptionDispatchInfo.Capture((obj3 as Exception) ?? throw obj3).Throw();
+		}
+		if (num == 1)
+		{
+			return result;
+		}
+		TResult result2 = default(TResult);
+		return result2;
+	}
 
-		2. Incorrect dll files were provided to AssetRipper.
+	internal static async UniTask<TSource> AggregateAwaitAsync<TSource>(IUniTaskAsyncEnumerable<TSource> source, Func<TSource, TSource, UniTask<TSource>> accumulator, CancellationToken cancellationToken)
+	{
+		IUniTaskAsyncEnumerator<TSource> e = source.GetAsyncEnumerator(cancellationToken);
+		object obj = null;
+		int num = 0;
+		TSource result = default(TSource);
+		try
+		{
+			if (!(await e.MoveNextAsync()))
+			{
+				throw Error.NoElements();
+			}
+			TSource value = e.Current;
+			while (await e.MoveNextAsync())
+			{
+				value = await accumulator(value, e.Current);
+			}
+			result = value;
+			num = 1;
+		}
+		catch (object obj2)
+		{
+			obj = obj2;
+		}
+		if (e != null)
+		{
+			await e.DisposeAsync();
+		}
+		object obj3 = obj;
+		if (obj3 != null)
+		{
+			ExceptionDispatchInfo.Capture((obj3 as Exception) ?? throw obj3).Throw();
+		}
+		if (num == 1)
+		{
+			return result;
+		}
+		TSource result2 = default(TSource);
+		return result2;
+	}
 
-			Any of the following could cause this:
-				* Il2CppInterop assemblies
-				* Deobfuscated assemblies
-				* Older assemblies (compared to when the bundle was built)
-				* Newer assemblies (compared to when the bundle was built)
+	internal static async UniTask<TAccumulate> AggregateAwaitAsync<TSource, TAccumulate>(IUniTaskAsyncEnumerable<TSource> source, TAccumulate seed, Func<TAccumulate, TSource, UniTask<TAccumulate>> accumulator, CancellationToken cancellationToken)
+	{
+		IUniTaskAsyncEnumerator<TSource> e = source.GetAsyncEnumerator(cancellationToken);
+		object obj = null;
+		int num = 0;
+		TAccumulate result = default(TAccumulate);
+		try
+		{
+			TAccumulate value = seed;
+			while (await e.MoveNextAsync())
+			{
+				value = await accumulator(value, e.Current);
+			}
+			result = value;
+			num = 1;
+		}
+		catch (object obj2)
+		{
+			obj = obj2;
+		}
+		if (e != null)
+		{
+			await e.DisposeAsync();
+		}
+		object obj3 = obj;
+		if (obj3 != null)
+		{
+			ExceptionDispatchInfo.Capture((obj3 as Exception) ?? throw obj3).Throw();
+		}
+		if (num == 1)
+		{
+			return result;
+		}
+		TAccumulate result2 = default(TAccumulate);
+		return result2;
+	}
 
-			Note: Although assembly publicizing is bad, it alone cannot cause empty scripts. See: https://github.com/AssetRipper/AssetRipper/issues/653
+	internal static async UniTask<TResult> AggregateAwaitAsync<TSource, TAccumulate, TResult>(IUniTaskAsyncEnumerable<TSource> source, TAccumulate seed, Func<TAccumulate, TSource, UniTask<TAccumulate>> accumulator, Func<TAccumulate, UniTask<TResult>> resultSelector, CancellationToken cancellationToken)
+	{
+		IUniTaskAsyncEnumerator<TSource> e = source.GetAsyncEnumerator(cancellationToken);
+		object obj = null;
+		int num = 0;
+		TResult result = default(TResult);
+		try
+		{
+			TAccumulate value = seed;
+			while (await e.MoveNextAsync())
+			{
+				value = await accumulator(value, e.Current);
+			}
+			result = await resultSelector(value);
+			num = 1;
+		}
+		catch (object obj2)
+		{
+			obj = obj2;
+		}
+		if (e != null)
+		{
+			await e.DisposeAsync();
+		}
+		object obj3 = obj;
+		if (obj3 != null)
+		{
+			ExceptionDispatchInfo.Capture((obj3 as Exception) ?? throw obj3).Throw();
+		}
+		if (num == 1)
+		{
+			return result;
+		}
+		TResult result2 = default(TResult);
+		return result2;
+	}
 
-		3. Assembly Reconstruction has not been implemented.
+	internal static async UniTask<TSource> AggregateAwaitWithCancellationAsync<TSource>(IUniTaskAsyncEnumerable<TSource> source, Func<TSource, TSource, CancellationToken, UniTask<TSource>> accumulator, CancellationToken cancellationToken)
+	{
+		IUniTaskAsyncEnumerator<TSource> e = source.GetAsyncEnumerator(cancellationToken);
+		object obj = null;
+		int num = 0;
+		TSource result = default(TSource);
+		try
+		{
+			if (!(await e.MoveNextAsync()))
+			{
+				throw Error.NoElements();
+			}
+			TSource value = e.Current;
+			while (await e.MoveNextAsync())
+			{
+				value = await accumulator(value, e.Current, cancellationToken);
+			}
+			result = value;
+			num = 1;
+		}
+		catch (object obj2)
+		{
+			obj = obj2;
+		}
+		if (e != null)
+		{
+			await e.DisposeAsync();
+		}
+		object obj3 = obj;
+		if (obj3 != null)
+		{
+			ExceptionDispatchInfo.Capture((obj3 as Exception) ?? throw obj3).Throw();
+		}
+		if (num == 1)
+		{
+			return result;
+		}
+		TSource result2 = default(TSource);
+		return result2;
+	}
 
-			Asset bundles contain a small amount of information about the script content.
-			This information can be used to recover the serializable fields of a script.
+	internal static async UniTask<TAccumulate> AggregateAwaitWithCancellationAsync<TSource, TAccumulate>(IUniTaskAsyncEnumerable<TSource> source, TAccumulate seed, Func<TAccumulate, TSource, CancellationToken, UniTask<TAccumulate>> accumulator, CancellationToken cancellationToken)
+	{
+		IUniTaskAsyncEnumerator<TSource> e = source.GetAsyncEnumerator(cancellationToken);
+		object obj = null;
+		int num = 0;
+		TAccumulate result = default(TAccumulate);
+		try
+		{
+			TAccumulate value = seed;
+			while (await e.MoveNextAsync())
+			{
+				value = await accumulator(value, e.Current, cancellationToken);
+			}
+			result = value;
+			num = 1;
+		}
+		catch (object obj2)
+		{
+			obj = obj2;
+		}
+		if (e != null)
+		{
+			await e.DisposeAsync();
+		}
+		object obj3 = obj;
+		if (obj3 != null)
+		{
+			ExceptionDispatchInfo.Capture((obj3 as Exception) ?? throw obj3).Throw();
+		}
+		if (num == 1)
+		{
+			return result;
+		}
+		TAccumulate result2 = default(TAccumulate);
+		return result2;
+	}
 
-			See: https://github.com/AssetRipper/AssetRipper/issues/655
-	
-		4. This script is unnecessary.
-
-			If this script has no asset or script references, it can be deleted.
-			Be sure to resolve any compile errors before deleting because they can hide references.
-
-		5. Script Content Level 0
-
-			AssetRipper was set to not load any script information.
-
-		6. Cpp2IL failed to decompile Il2Cpp data
-
-			If this happened, there will be errors in the AssetRipper.log indicating that it happened.
-			This is an upstream problem, and the AssetRipper developer has very little control over it.
-			Please post a GitHub issue at: https://github.com/SamboyCoding/Cpp2IL/issues
-
-		7. An incorrect path was provided to AssetRipper.
-
-			This is characterized by "Mixed game structure has been found at" in the AssetRipper.log file.
-			AssetRipper expects games to conform to a normal file structure for Unity games of that platform.
-			An unexpected file structure could cause AssetRipper to not find the required files for script decompilation.
-			Generally, AssetRipper expects users to provide the root folder of the game. For example:
-				* Windows: the folder containing the game's .exe file
-				* Mac: the .app file/folder
-				* Linux: the folder containing the game's executable file
-				* Android: the apk file
-				* iOS: the ipa file
-				* Switch: the folder containing exefs and romfs
-
-		*/
+	internal static async UniTask<TResult> AggregateAwaitWithCancellationAsync<TSource, TAccumulate, TResult>(IUniTaskAsyncEnumerable<TSource> source, TAccumulate seed, Func<TAccumulate, TSource, CancellationToken, UniTask<TAccumulate>> accumulator, Func<TAccumulate, CancellationToken, UniTask<TResult>> resultSelector, CancellationToken cancellationToken)
+	{
+		IUniTaskAsyncEnumerator<TSource> e = source.GetAsyncEnumerator(cancellationToken);
+		object obj = null;
+		int num = 0;
+		TResult result = default(TResult);
+		try
+		{
+			TAccumulate value = seed;
+			while (await e.MoveNextAsync())
+			{
+				value = await accumulator(value, e.Current, cancellationToken);
+			}
+			result = await resultSelector(value, cancellationToken);
+			num = 1;
+		}
+		catch (object obj2)
+		{
+			obj = obj2;
+		}
+		if (e != null)
+		{
+			await e.DisposeAsync();
+		}
+		object obj3 = obj;
+		if (obj3 != null)
+		{
+			ExceptionDispatchInfo.Capture((obj3 as Exception) ?? throw obj3).Throw();
+		}
+		if (num == 1)
+		{
+			return result;
+		}
+		TResult result2 = default(TResult);
+		return result2;
 	}
 }

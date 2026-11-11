@@ -1,66 +1,264 @@
+using System;
+using System.Collections;
+using System.Reflection;
+using System.Threading;
+using System.Threading.Tasks.Sources;
+using Cysharp.Threading.Tasks.Internal;
 using UnityEngine;
 
-namespace Cysharp.Threading.Tasks
+namespace Cysharp.Threading.Tasks;
+
+public static class EnumeratorAsyncExtensions
 {
-	public class EnumeratorAsyncExtensions : MonoBehaviour
+	private sealed class EnumeratorPromise : IUniTaskSource, IValueTaskSource, IPlayerLoopItem, ITaskPoolNode<EnumeratorPromise>
 	{
-		/*
-		Dummy class. This could have happened for several reasons:
+		private static TaskPool<EnumeratorPromise> pool;
 
-		1. No dll files were provided to AssetRipper.
+		private EnumeratorPromise nextNode;
 
-			Unity asset bundles and serialized files do not contain script information to decompile.
-				* For Mono games, that information is contained in .NET dll files.
-				* For Il2Cpp games, that information is contained in compiled C++ assemblies and the global metadata.
-				
-			AssetRipper usually expects games to conform to a normal file structure for Unity games of that platform.
-			A unexpected file structure could cause AssetRipper to not find the required files.
+		private IEnumerator innerEnumerator;
 
-		2. Incorrect dll files were provided to AssetRipper.
+		private CancellationToken cancellationToken;
 
-			Any of the following could cause this:
-				* Il2CppInterop assemblies
-				* Deobfuscated assemblies
-				* Older assemblies (compared to when the bundle was built)
-				* Newer assemblies (compared to when the bundle was built)
+		private int initialFrame;
 
-			Note: Although assembly publicizing is bad, it alone cannot cause empty scripts. See: https://github.com/AssetRipper/AssetRipper/issues/653
+		private bool loopRunning;
 
-		3. Assembly Reconstruction has not been implemented.
+		private bool calledGetResult;
 
-			Asset bundles contain a small amount of information about the script content.
-			This information can be used to recover the serializable fields of a script.
+		private UniTaskCompletionSourceCore<object> core;
 
-			See: https://github.com/AssetRipper/AssetRipper/issues/655
-	
-		4. This script is unnecessary.
+		private static readonly FieldInfo waitForSeconds_Seconds;
 
-			If this script has no asset or script references, it can be deleted.
-			Be sure to resolve any compile errors before deleting because they can hide references.
+		public ref EnumeratorPromise NextNode => ref nextNode;
 
-		5. Script Content Level 0
+		static EnumeratorPromise()
+		{
+			waitForSeconds_Seconds = typeof(WaitForSeconds).GetField("m_Seconds", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.GetField);
+			TaskPool.RegisterSizeGetter(typeof(EnumeratorPromise), () => pool.Size);
+		}
 
-			AssetRipper was set to not load any script information.
+		private EnumeratorPromise()
+		{
+		}
 
-		6. Cpp2IL failed to decompile Il2Cpp data
+		public static IUniTaskSource Create(IEnumerator innerEnumerator, PlayerLoopTiming timing, CancellationToken cancellationToken, out short token)
+		{
+			if (cancellationToken.IsCancellationRequested)
+			{
+				return AutoResetUniTaskCompletionSource.CreateFromCanceled(cancellationToken, out token);
+			}
+			if (!pool.TryPop(out var result))
+			{
+				result = new EnumeratorPromise();
+			}
+			result.innerEnumerator = ConsumeEnumerator(innerEnumerator);
+			result.cancellationToken = cancellationToken;
+			result.loopRunning = true;
+			result.calledGetResult = false;
+			result.initialFrame = -1;
+			token = result.core.Version;
+			if (result.MoveNext())
+			{
+				PlayerLoopHelper.AddAction(timing, result);
+			}
+			return result;
+		}
 
-			If this happened, there will be errors in the AssetRipper.log indicating that it happened.
-			This is an upstream problem, and the AssetRipper developer has very little control over it.
-			Please post a GitHub issue at: https://github.com/SamboyCoding/Cpp2IL/issues
+		public void GetResult(short token)
+		{
+			try
+			{
+				calledGetResult = true;
+				core.GetResult(token);
+			}
+			finally
+			{
+				if (!loopRunning)
+				{
+					TryReturn();
+				}
+			}
+		}
 
-		7. An incorrect path was provided to AssetRipper.
+		public UniTaskStatus GetStatus(short token)
+		{
+			return core.GetStatus(token);
+		}
 
-			This is characterized by "Mixed game structure has been found at" in the AssetRipper.log file.
-			AssetRipper expects games to conform to a normal file structure for Unity games of that platform.
-			An unexpected file structure could cause AssetRipper to not find the required files for script decompilation.
-			Generally, AssetRipper expects users to provide the root folder of the game. For example:
-				* Windows: the folder containing the game's .exe file
-				* Mac: the .app file/folder
-				* Linux: the folder containing the game's executable file
-				* Android: the apk file
-				* iOS: the ipa file
-				* Switch: the folder containing exefs and romfs
+		public UniTaskStatus UnsafeGetStatus()
+		{
+			return core.UnsafeGetStatus();
+		}
 
-		*/
+		public void OnCompleted(Action<object> continuation, object state, short token)
+		{
+			core.OnCompleted(continuation, state, token);
+		}
+
+		public bool MoveNext()
+		{
+			if (calledGetResult)
+			{
+				loopRunning = false;
+				TryReturn();
+				return false;
+			}
+			if (innerEnumerator == null)
+			{
+				return false;
+			}
+			if (cancellationToken.IsCancellationRequested)
+			{
+				loopRunning = false;
+				core.TrySetCanceled(cancellationToken);
+				return false;
+			}
+			if (initialFrame == -1)
+			{
+				if (PlayerLoopHelper.IsMainThread)
+				{
+					initialFrame = Time.frameCount;
+				}
+			}
+			else if (initialFrame == Time.frameCount)
+			{
+				return true;
+			}
+			try
+			{
+				if (innerEnumerator.MoveNext())
+				{
+					return true;
+				}
+			}
+			catch (Exception error)
+			{
+				loopRunning = false;
+				core.TrySetException(error);
+				return false;
+			}
+			loopRunning = false;
+			core.TrySetResult(null);
+			return false;
+		}
+
+		private bool TryReturn()
+		{
+			core.Reset();
+			innerEnumerator = null;
+			cancellationToken = default(CancellationToken);
+			return pool.TryPush(this);
+		}
+
+		private static IEnumerator ConsumeEnumerator(IEnumerator enumerator)
+		{
+			while (enumerator.MoveNext())
+			{
+				object current = enumerator.Current;
+				if (current == null)
+				{
+					yield return null;
+					continue;
+				}
+				if (current is CustomYieldInstruction cyi)
+				{
+					while (cyi.keepWaiting)
+					{
+						yield return null;
+					}
+					continue;
+				}
+				if (current is YieldInstruction)
+				{
+					IEnumerator innerCoroutine = null;
+					if (!(current is AsyncOperation asyncOperation))
+					{
+						if (current is WaitForSeconds waitForSeconds)
+						{
+							innerCoroutine = UnwrapWaitForSeconds(waitForSeconds);
+						}
+					}
+					else
+					{
+						innerCoroutine = UnwrapWaitAsyncOperation(asyncOperation);
+					}
+					if (innerCoroutine != null)
+					{
+						while (innerCoroutine.MoveNext())
+						{
+							yield return null;
+						}
+						continue;
+					}
+				}
+				else if (current is IEnumerator enumerator2)
+				{
+					IEnumerator innerCoroutine = ConsumeEnumerator(enumerator2);
+					while (innerCoroutine.MoveNext())
+					{
+						yield return null;
+					}
+					continue;
+				}
+				Debug.LogWarning("yield " + current.GetType().Name + " is not supported on await IEnumerator or IEnumerator.ToUniTask(), please use ToUniTask(MonoBehaviour coroutineRunner) instead.");
+				yield return null;
+			}
+		}
+
+		private static IEnumerator UnwrapWaitForSeconds(WaitForSeconds waitForSeconds)
+		{
+			float second = (float)waitForSeconds_Seconds.GetValue(waitForSeconds);
+			float elapsed = 0f;
+			do
+			{
+				yield return null;
+				elapsed += Time.deltaTime;
+			}
+			while (!(elapsed >= second));
+		}
+
+		private static IEnumerator UnwrapWaitAsyncOperation(AsyncOperation asyncOperation)
+		{
+			while (!asyncOperation.isDone)
+			{
+				yield return null;
+			}
+		}
+	}
+
+	public static UniTask.Awaiter GetAwaiter<T>(this T enumerator) where T : IEnumerator
+	{
+		object obj = enumerator;
+		Error.ThrowArgumentNullException((IEnumerator)obj, "enumerator");
+		short token;
+		return new UniTask(EnumeratorPromise.Create((IEnumerator)obj, PlayerLoopTiming.Update, CancellationToken.None, out token), token).GetAwaiter();
+	}
+
+	public static UniTask WithCancellation(this IEnumerator enumerator, CancellationToken cancellationToken)
+	{
+		Error.ThrowArgumentNullException(enumerator, "enumerator");
+		short token;
+		return new UniTask(EnumeratorPromise.Create(enumerator, PlayerLoopTiming.Update, cancellationToken, out token), token);
+	}
+
+	public static UniTask ToUniTask(this IEnumerator enumerator, PlayerLoopTiming timing = PlayerLoopTiming.Update, CancellationToken cancellationToken = default(CancellationToken))
+	{
+		Error.ThrowArgumentNullException(enumerator, "enumerator");
+		short token;
+		return new UniTask(EnumeratorPromise.Create(enumerator, timing, cancellationToken, out token), token);
+	}
+
+	public static UniTask ToUniTask(this IEnumerator enumerator, MonoBehaviour coroutineRunner)
+	{
+		AutoResetUniTaskCompletionSource autoResetUniTaskCompletionSource = AutoResetUniTaskCompletionSource.Create();
+		coroutineRunner.StartCoroutine(Core(enumerator, coroutineRunner, autoResetUniTaskCompletionSource));
+		return autoResetUniTaskCompletionSource.Task;
+	}
+
+	private static IEnumerator Core(IEnumerator inner, MonoBehaviour coroutineRunner, AutoResetUniTaskCompletionSource source)
+	{
+		yield return coroutineRunner.StartCoroutine(inner);
+		source.TrySetResult();
 	}
 }

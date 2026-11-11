@@ -1,66 +1,82 @@
-using UnityEngine;
+using System;
+using UnityEngine.Serialization;
 
-namespace FMODUnity
+namespace FMODUnity;
+
+[Serializable]
+public struct AutomatableSlots
 {
-	public class AutomatableSlots : MonoBehaviour
+	public const int Count = 16;
+
+	[FormerlySerializedAs("slot00")]
+	public float Slot00;
+
+	[FormerlySerializedAs("slot01")]
+	public float Slot01;
+
+	[FormerlySerializedAs("slot02")]
+	public float Slot02;
+
+	[FormerlySerializedAs("slot03")]
+	public float Slot03;
+
+	[FormerlySerializedAs("slot04")]
+	public float Slot04;
+
+	[FormerlySerializedAs("slot05")]
+	public float Slot05;
+
+	[FormerlySerializedAs("slot06")]
+	public float Slot06;
+
+	[FormerlySerializedAs("slot07")]
+	public float Slot07;
+
+	[FormerlySerializedAs("slot08")]
+	public float Slot08;
+
+	[FormerlySerializedAs("slot09")]
+	public float Slot09;
+
+	[FormerlySerializedAs("slot10")]
+	public float Slot10;
+
+	[FormerlySerializedAs("slot11")]
+	public float Slot11;
+
+	[FormerlySerializedAs("slot12")]
+	public float Slot12;
+
+	[FormerlySerializedAs("slot13")]
+	public float Slot13;
+
+	[FormerlySerializedAs("slot14")]
+	public float Slot14;
+
+	[FormerlySerializedAs("slot15")]
+	public float Slot15;
+
+	public float GetValue(int index)
 	{
-		/*
-		Dummy class. This could have happened for several reasons:
-
-		1. No dll files were provided to AssetRipper.
-
-			Unity asset bundles and serialized files do not contain script information to decompile.
-				* For Mono games, that information is contained in .NET dll files.
-				* For Il2Cpp games, that information is contained in compiled C++ assemblies and the global metadata.
-				
-			AssetRipper usually expects games to conform to a normal file structure for Unity games of that platform.
-			A unexpected file structure could cause AssetRipper to not find the required files.
-
-		2. Incorrect dll files were provided to AssetRipper.
-
-			Any of the following could cause this:
-				* Il2CppInterop assemblies
-				* Deobfuscated assemblies
-				* Older assemblies (compared to when the bundle was built)
-				* Newer assemblies (compared to when the bundle was built)
-
-			Note: Although assembly publicizing is bad, it alone cannot cause empty scripts. See: https://github.com/AssetRipper/AssetRipper/issues/653
-
-		3. Assembly Reconstruction has not been implemented.
-
-			Asset bundles contain a small amount of information about the script content.
-			This information can be used to recover the serializable fields of a script.
-
-			See: https://github.com/AssetRipper/AssetRipper/issues/655
-	
-		4. This script is unnecessary.
-
-			If this script has no asset or script references, it can be deleted.
-			Be sure to resolve any compile errors before deleting because they can hide references.
-
-		5. Script Content Level 0
-
-			AssetRipper was set to not load any script information.
-
-		6. Cpp2IL failed to decompile Il2Cpp data
-
-			If this happened, there will be errors in the AssetRipper.log indicating that it happened.
-			This is an upstream problem, and the AssetRipper developer has very little control over it.
-			Please post a GitHub issue at: https://github.com/SamboyCoding/Cpp2IL/issues
-
-		7. An incorrect path was provided to AssetRipper.
-
-			This is characterized by "Mixed game structure has been found at" in the AssetRipper.log file.
-			AssetRipper expects games to conform to a normal file structure for Unity games of that platform.
-			An unexpected file structure could cause AssetRipper to not find the required files for script decompilation.
-			Generally, AssetRipper expects users to provide the root folder of the game. For example:
-				* Windows: the folder containing the game's .exe file
-				* Mac: the .app file/folder
-				* Linux: the folder containing the game's executable file
-				* Android: the apk file
-				* iOS: the ipa file
-				* Switch: the folder containing exefs and romfs
-
-		*/
+		return index switch
+		{
+			0 => Slot00, 
+			1 => Slot01, 
+			2 => Slot02, 
+			3 => Slot03, 
+			4 => Slot04, 
+			5 => Slot05, 
+			6 => Slot06, 
+			7 => Slot07, 
+			8 => Slot08, 
+			9 => Slot09, 
+			10 => Slot10, 
+			11 => Slot11, 
+			12 => Slot12, 
+			13 => Slot13, 
+			14 => Slot14, 
+			15 => Slot15, 
+			_ => throw new ArgumentException($"Invalid slot index: {index}"), 
+		};
 	}
 }

@@ -1,66 +1,452 @@
-using UnityEngine;
+using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.Linq;
+using System.Runtime.ExceptionServices;
+using System.Threading;
+using Cysharp.Threading.Tasks.Internal;
 
-namespace Cysharp.Threading.Tasks.Linq
+namespace Cysharp.Threading.Tasks.Linq;
+
+internal static class ToLookup
 {
-	public class ToLookup : MonoBehaviour
+	private class Lookup<TKey, TElement> : ILookup<TKey, TElement>, IEnumerable<IGrouping<TKey, TElement>>, IEnumerable
 	{
-		/*
-		Dummy class. This could have happened for several reasons:
+		private static readonly Lookup<TKey, TElement> empty = new Lookup<TKey, TElement>(new Dictionary<TKey, Grouping<TKey, TElement>>());
 
-		1. No dll files were provided to AssetRipper.
+		private readonly Dictionary<TKey, Grouping<TKey, TElement>> dict;
 
-			Unity asset bundles and serialized files do not contain script information to decompile.
-				* For Mono games, that information is contained in .NET dll files.
-				* For Il2Cpp games, that information is contained in compiled C++ assemblies and the global metadata.
-				
-			AssetRipper usually expects games to conform to a normal file structure for Unity games of that platform.
-			A unexpected file structure could cause AssetRipper to not find the required files.
+		public IEnumerable<TElement> this[TKey key]
+		{
+			get
+			{
+				if (!dict.TryGetValue(key, out var value))
+				{
+					return Enumerable.Empty<TElement>();
+				}
+				return value;
+			}
+		}
 
-		2. Incorrect dll files were provided to AssetRipper.
+		public int Count => dict.Count;
 
-			Any of the following could cause this:
-				* Il2CppInterop assemblies
-				* Deobfuscated assemblies
-				* Older assemblies (compared to when the bundle was built)
-				* Newer assemblies (compared to when the bundle was built)
+		private Lookup(Dictionary<TKey, Grouping<TKey, TElement>> dict)
+		{
+			this.dict = dict;
+		}
 
-			Note: Although assembly publicizing is bad, it alone cannot cause empty scripts. See: https://github.com/AssetRipper/AssetRipper/issues/653
+		public static Lookup<TKey, TElement> CreateEmpty()
+		{
+			return empty;
+		}
 
-		3. Assembly Reconstruction has not been implemented.
+		public static Lookup<TKey, TElement> Create(ArraySegment<TElement> source, Func<TElement, TKey> keySelector, IEqualityComparer<TKey> comparer)
+		{
+			Dictionary<TKey, Grouping<TKey, TElement>> dictionary = new Dictionary<TKey, Grouping<TKey, TElement>>(comparer);
+			TElement[] array = source.Array;
+			int count = source.Count;
+			for (int i = source.Offset; i < count; i++)
+			{
+				TKey key = keySelector(array[i]);
+				if (!dictionary.TryGetValue(key, out var value))
+				{
+					value = (dictionary[key] = new Grouping<TKey, TElement>(key));
+				}
+				value.Add(array[i]);
+			}
+			return new Lookup<TKey, TElement>(dictionary);
+		}
 
-			Asset bundles contain a small amount of information about the script content.
-			This information can be used to recover the serializable fields of a script.
+		public static Lookup<TKey, TElement> Create<TSource>(ArraySegment<TSource> source, Func<TSource, TKey> keySelector, Func<TSource, TElement> elementSelector, IEqualityComparer<TKey> comparer)
+		{
+			Dictionary<TKey, Grouping<TKey, TElement>> dictionary = new Dictionary<TKey, Grouping<TKey, TElement>>(comparer);
+			TSource[] array = source.Array;
+			int count = source.Count;
+			for (int i = source.Offset; i < count; i++)
+			{
+				TKey key = keySelector(array[i]);
+				TElement value = elementSelector(array[i]);
+				if (!dictionary.TryGetValue(key, out var value2))
+				{
+					value2 = (dictionary[key] = new Grouping<TKey, TElement>(key));
+				}
+				value2.Add(value);
+			}
+			return new Lookup<TKey, TElement>(dictionary);
+		}
 
-			See: https://github.com/AssetRipper/AssetRipper/issues/655
-	
-		4. This script is unnecessary.
+		public static async UniTask<Lookup<TKey, TElement>> CreateAsync(ArraySegment<TElement> source, Func<TElement, UniTask<TKey>> keySelector, IEqualityComparer<TKey> comparer)
+		{
+			Dictionary<TKey, Grouping<TKey, TElement>> dict = new Dictionary<TKey, Grouping<TKey, TElement>>(comparer);
+			TElement[] arr = source.Array;
+			int c = source.Count;
+			for (int i = source.Offset; i < c; i++)
+			{
+				TKey key = await keySelector(arr[i]);
+				if (!dict.TryGetValue(key, out var value))
+				{
+					value = (dict[key] = new Grouping<TKey, TElement>(key));
+				}
+				value.Add(arr[i]);
+			}
+			return new Lookup<TKey, TElement>(dict);
+		}
 
-			If this script has no asset or script references, it can be deleted.
-			Be sure to resolve any compile errors before deleting because they can hide references.
+		public static async UniTask<Lookup<TKey, TElement>> CreateAsync<TSource>(ArraySegment<TSource> source, Func<TSource, UniTask<TKey>> keySelector, Func<TSource, UniTask<TElement>> elementSelector, IEqualityComparer<TKey> comparer)
+		{
+			Dictionary<TKey, Grouping<TKey, TElement>> dict = new Dictionary<TKey, Grouping<TKey, TElement>>(comparer);
+			TSource[] arr = source.Array;
+			int c = source.Count;
+			for (int i = source.Offset; i < c; i++)
+			{
+				TKey key = await keySelector(arr[i]);
+				TElement value = await elementSelector(arr[i]);
+				if (!dict.TryGetValue(key, out var value2))
+				{
+					value2 = (dict[key] = new Grouping<TKey, TElement>(key));
+				}
+				value2.Add(value);
+			}
+			return new Lookup<TKey, TElement>(dict);
+		}
 
-		5. Script Content Level 0
+		public static async UniTask<Lookup<TKey, TElement>> CreateAsync(ArraySegment<TElement> source, Func<TElement, CancellationToken, UniTask<TKey>> keySelector, IEqualityComparer<TKey> comparer, CancellationToken cancellationToken)
+		{
+			Dictionary<TKey, Grouping<TKey, TElement>> dict = new Dictionary<TKey, Grouping<TKey, TElement>>(comparer);
+			TElement[] arr = source.Array;
+			int c = source.Count;
+			for (int i = source.Offset; i < c; i++)
+			{
+				TKey key = await keySelector(arr[i], cancellationToken);
+				if (!dict.TryGetValue(key, out var value))
+				{
+					value = (dict[key] = new Grouping<TKey, TElement>(key));
+				}
+				value.Add(arr[i]);
+			}
+			return new Lookup<TKey, TElement>(dict);
+		}
 
-			AssetRipper was set to not load any script information.
+		public static async UniTask<Lookup<TKey, TElement>> CreateAsync<TSource>(ArraySegment<TSource> source, Func<TSource, CancellationToken, UniTask<TKey>> keySelector, Func<TSource, CancellationToken, UniTask<TElement>> elementSelector, IEqualityComparer<TKey> comparer, CancellationToken cancellationToken)
+		{
+			Dictionary<TKey, Grouping<TKey, TElement>> dict = new Dictionary<TKey, Grouping<TKey, TElement>>(comparer);
+			TSource[] arr = source.Array;
+			int c = source.Count;
+			for (int i = source.Offset; i < c; i++)
+			{
+				TKey key = await keySelector(arr[i], cancellationToken);
+				TElement value = await elementSelector(arr[i], cancellationToken);
+				if (!dict.TryGetValue(key, out var value2))
+				{
+					value2 = (dict[key] = new Grouping<TKey, TElement>(key));
+				}
+				value2.Add(value);
+			}
+			return new Lookup<TKey, TElement>(dict);
+		}
 
-		6. Cpp2IL failed to decompile Il2Cpp data
+		public bool Contains(TKey key)
+		{
+			return dict.ContainsKey(key);
+		}
 
-			If this happened, there will be errors in the AssetRipper.log indicating that it happened.
-			This is an upstream problem, and the AssetRipper developer has very little control over it.
-			Please post a GitHub issue at: https://github.com/SamboyCoding/Cpp2IL/issues
+		public IEnumerator<IGrouping<TKey, TElement>> GetEnumerator()
+		{
+			return dict.Values.GetEnumerator();
+		}
 
-		7. An incorrect path was provided to AssetRipper.
+		IEnumerator IEnumerable.GetEnumerator()
+		{
+			return dict.Values.GetEnumerator();
+		}
+	}
 
-			This is characterized by "Mixed game structure has been found at" in the AssetRipper.log file.
-			AssetRipper expects games to conform to a normal file structure for Unity games of that platform.
-			An unexpected file structure could cause AssetRipper to not find the required files for script decompilation.
-			Generally, AssetRipper expects users to provide the root folder of the game. For example:
-				* Windows: the folder containing the game's .exe file
-				* Mac: the .app file/folder
-				* Linux: the folder containing the game's executable file
-				* Android: the apk file
-				* iOS: the ipa file
-				* Switch: the folder containing exefs and romfs
+	private class Grouping<TKey, TElement> : IGrouping<TKey, TElement>, IEnumerable<TElement>, IEnumerable
+	{
+		private readonly List<TElement> elements;
 
-		*/
+		public TKey Key { get; private set; }
+
+		public Grouping(TKey key)
+		{
+			Key = key;
+			elements = new List<TElement>();
+		}
+
+		public void Add(TElement value)
+		{
+			elements.Add(value);
+		}
+
+		public IEnumerator<TElement> GetEnumerator()
+		{
+			return elements.GetEnumerator();
+		}
+
+		IEnumerator IEnumerable.GetEnumerator()
+		{
+			return elements.GetEnumerator();
+		}
+
+		public IUniTaskAsyncEnumerator<TElement> GetAsyncEnumerator(CancellationToken cancellationToken = default(CancellationToken))
+		{
+			return this.ToUniTaskAsyncEnumerable().GetAsyncEnumerator(cancellationToken);
+		}
+
+		public override string ToString()
+		{
+			return "Key: " + Key?.ToString() + ", Count: " + elements.Count;
+		}
+	}
+
+	internal static async UniTask<ILookup<TKey, TSource>> ToLookupAsync<TSource, TKey>(IUniTaskAsyncEnumerable<TSource> source, Func<TSource, TKey> keySelector, IEqualityComparer<TKey> comparer, CancellationToken cancellationToken)
+	{
+		ArrayPool<TSource> pool = ArrayPool<TSource>.Shared;
+		TSource[] array = pool.Rent(16);
+		IUniTaskAsyncEnumerator<TSource> e = source.GetAsyncEnumerator(cancellationToken);
+		object obj = null;
+		int num = 0;
+		ILookup<TKey, TSource> result = default(ILookup<TKey, TSource>);
+		try
+		{
+			int i = 0;
+			while (await e.MoveNextAsync())
+			{
+				ArrayPoolUtil.EnsureCapacity(ref array, i, pool);
+				array[i++] = e.Current;
+			}
+			result = ((i != 0) ? Lookup<TKey, TSource>.Create(new ArraySegment<TSource>(array, 0, i), keySelector, comparer) : Lookup<TKey, TSource>.CreateEmpty());
+			num = 1;
+		}
+		catch (object obj2)
+		{
+			obj = obj2;
+		}
+		pool.Return(array, !RuntimeHelpersAbstraction.IsWellKnownNoReferenceContainsType<TSource>());
+		if (e != null)
+		{
+			await e.DisposeAsync();
+		}
+		object obj3 = obj;
+		if (obj3 != null)
+		{
+			ExceptionDispatchInfo.Capture((obj3 as Exception) ?? throw obj3).Throw();
+		}
+		if (num == 1)
+		{
+			return result;
+		}
+		ILookup<TKey, TSource> result2 = default(ILookup<TKey, TSource>);
+		return result2;
+	}
+
+	internal static async UniTask<ILookup<TKey, TElement>> ToLookupAsync<TSource, TKey, TElement>(IUniTaskAsyncEnumerable<TSource> source, Func<TSource, TKey> keySelector, Func<TSource, TElement> elementSelector, IEqualityComparer<TKey> comparer, CancellationToken cancellationToken)
+	{
+		ArrayPool<TSource> pool = ArrayPool<TSource>.Shared;
+		TSource[] array = pool.Rent(16);
+		IUniTaskAsyncEnumerator<TSource> e = null;
+		object obj = null;
+		int num = 0;
+		ILookup<TKey, TElement> result = default(ILookup<TKey, TElement>);
+		try
+		{
+			e = source.GetAsyncEnumerator(cancellationToken);
+			int i = 0;
+			while (await e.MoveNextAsync())
+			{
+				ArrayPoolUtil.EnsureCapacity(ref array, i, pool);
+				array[i++] = e.Current;
+			}
+			result = ((i != 0) ? Lookup<TKey, TElement>.Create(new ArraySegment<TSource>(array, 0, i), keySelector, elementSelector, comparer) : Lookup<TKey, TElement>.CreateEmpty());
+			num = 1;
+		}
+		catch (object obj2)
+		{
+			obj = obj2;
+		}
+		pool.Return(array, !RuntimeHelpersAbstraction.IsWellKnownNoReferenceContainsType<TSource>());
+		if (e != null)
+		{
+			await e.DisposeAsync();
+		}
+		object obj3 = obj;
+		if (obj3 != null)
+		{
+			ExceptionDispatchInfo.Capture((obj3 as Exception) ?? throw obj3).Throw();
+		}
+		if (num == 1)
+		{
+			return result;
+		}
+		ILookup<TKey, TElement> result2 = default(ILookup<TKey, TElement>);
+		return result2;
+	}
+
+	internal static async UniTask<ILookup<TKey, TSource>> ToLookupAwaitAsync<TSource, TKey>(IUniTaskAsyncEnumerable<TSource> source, Func<TSource, UniTask<TKey>> keySelector, IEqualityComparer<TKey> comparer, CancellationToken cancellationToken)
+	{
+		ArrayPool<TSource> pool = ArrayPool<TSource>.Shared;
+		TSource[] array = pool.Rent(16);
+		IUniTaskAsyncEnumerator<TSource> e = null;
+		object obj = null;
+		int num = 0;
+		ILookup<TKey, TSource> result = default(ILookup<TKey, TSource>);
+		try
+		{
+			e = source.GetAsyncEnumerator(cancellationToken);
+			int i = 0;
+			while (await e.MoveNextAsync())
+			{
+				ArrayPoolUtil.EnsureCapacity(ref array, i, pool);
+				array[i++] = e.Current;
+			}
+			result = ((i != 0) ? (await Lookup<TKey, TSource>.CreateAsync(new ArraySegment<TSource>(array, 0, i), keySelector, comparer)) : Lookup<TKey, TSource>.CreateEmpty());
+			num = 1;
+		}
+		catch (object obj2)
+		{
+			obj = obj2;
+		}
+		pool.Return(array, !RuntimeHelpersAbstraction.IsWellKnownNoReferenceContainsType<TSource>());
+		if (e != null)
+		{
+			await e.DisposeAsync();
+		}
+		object obj3 = obj;
+		if (obj3 != null)
+		{
+			ExceptionDispatchInfo.Capture((obj3 as Exception) ?? throw obj3).Throw();
+		}
+		if (num == 1)
+		{
+			return result;
+		}
+		ILookup<TKey, TSource> result2 = default(ILookup<TKey, TSource>);
+		return result2;
+	}
+
+	internal static async UniTask<ILookup<TKey, TElement>> ToLookupAwaitAsync<TSource, TKey, TElement>(IUniTaskAsyncEnumerable<TSource> source, Func<TSource, UniTask<TKey>> keySelector, Func<TSource, UniTask<TElement>> elementSelector, IEqualityComparer<TKey> comparer, CancellationToken cancellationToken)
+	{
+		ArrayPool<TSource> pool = ArrayPool<TSource>.Shared;
+		TSource[] array = pool.Rent(16);
+		IUniTaskAsyncEnumerator<TSource> e = null;
+		object obj = null;
+		int num = 0;
+		ILookup<TKey, TElement> result = default(ILookup<TKey, TElement>);
+		try
+		{
+			e = source.GetAsyncEnumerator(cancellationToken);
+			int i = 0;
+			while (await e.MoveNextAsync())
+			{
+				ArrayPoolUtil.EnsureCapacity(ref array, i, pool);
+				array[i++] = e.Current;
+			}
+			result = ((i != 0) ? (await Lookup<TKey, TElement>.CreateAsync(new ArraySegment<TSource>(array, 0, i), keySelector, elementSelector, comparer)) : Lookup<TKey, TElement>.CreateEmpty());
+			num = 1;
+		}
+		catch (object obj2)
+		{
+			obj = obj2;
+		}
+		pool.Return(array, !RuntimeHelpersAbstraction.IsWellKnownNoReferenceContainsType<TSource>());
+		if (e != null)
+		{
+			await e.DisposeAsync();
+		}
+		object obj3 = obj;
+		if (obj3 != null)
+		{
+			ExceptionDispatchInfo.Capture((obj3 as Exception) ?? throw obj3).Throw();
+		}
+		if (num == 1)
+		{
+			return result;
+		}
+		ILookup<TKey, TElement> result2 = default(ILookup<TKey, TElement>);
+		return result2;
+	}
+
+	internal static async UniTask<ILookup<TKey, TSource>> ToLookupAwaitWithCancellationAsync<TSource, TKey>(IUniTaskAsyncEnumerable<TSource> source, Func<TSource, CancellationToken, UniTask<TKey>> keySelector, IEqualityComparer<TKey> comparer, CancellationToken cancellationToken)
+	{
+		ArrayPool<TSource> pool = ArrayPool<TSource>.Shared;
+		TSource[] array = pool.Rent(16);
+		IUniTaskAsyncEnumerator<TSource> e = null;
+		object obj = null;
+		int num = 0;
+		ILookup<TKey, TSource> result = default(ILookup<TKey, TSource>);
+		try
+		{
+			e = source.GetAsyncEnumerator(cancellationToken);
+			int i = 0;
+			while (await e.MoveNextAsync())
+			{
+				ArrayPoolUtil.EnsureCapacity(ref array, i, pool);
+				array[i++] = e.Current;
+			}
+			result = ((i != 0) ? (await Lookup<TKey, TSource>.CreateAsync(new ArraySegment<TSource>(array, 0, i), keySelector, comparer, cancellationToken)) : Lookup<TKey, TSource>.CreateEmpty());
+			num = 1;
+		}
+		catch (object obj2)
+		{
+			obj = obj2;
+		}
+		pool.Return(array, !RuntimeHelpersAbstraction.IsWellKnownNoReferenceContainsType<TSource>());
+		if (e != null)
+		{
+			await e.DisposeAsync();
+		}
+		object obj3 = obj;
+		if (obj3 != null)
+		{
+			ExceptionDispatchInfo.Capture((obj3 as Exception) ?? throw obj3).Throw();
+		}
+		if (num == 1)
+		{
+			return result;
+		}
+		ILookup<TKey, TSource> result2 = default(ILookup<TKey, TSource>);
+		return result2;
+	}
+
+	internal static async UniTask<ILookup<TKey, TElement>> ToLookupAwaitWithCancellationAsync<TSource, TKey, TElement>(IUniTaskAsyncEnumerable<TSource> source, Func<TSource, CancellationToken, UniTask<TKey>> keySelector, Func<TSource, CancellationToken, UniTask<TElement>> elementSelector, IEqualityComparer<TKey> comparer, CancellationToken cancellationToken)
+	{
+		ArrayPool<TSource> pool = ArrayPool<TSource>.Shared;
+		TSource[] array = pool.Rent(16);
+		IUniTaskAsyncEnumerator<TSource> e = null;
+		object obj = null;
+		int num = 0;
+		ILookup<TKey, TElement> result = default(ILookup<TKey, TElement>);
+		try
+		{
+			e = source.GetAsyncEnumerator(cancellationToken);
+			int i = 0;
+			while (await e.MoveNextAsync())
+			{
+				ArrayPoolUtil.EnsureCapacity(ref array, i, pool);
+				array[i++] = e.Current;
+			}
+			result = ((i != 0) ? (await Lookup<TKey, TElement>.CreateAsync(new ArraySegment<TSource>(array, 0, i), keySelector, elementSelector, comparer, cancellationToken)) : Lookup<TKey, TElement>.CreateEmpty());
+			num = 1;
+		}
+		catch (object obj2)
+		{
+			obj = obj2;
+		}
+		pool.Return(array, !RuntimeHelpersAbstraction.IsWellKnownNoReferenceContainsType<TSource>());
+		if (e != null)
+		{
+			await e.DisposeAsync();
+		}
+		object obj3 = obj;
+		if (obj3 != null)
+		{
+			ExceptionDispatchInfo.Capture((obj3 as Exception) ?? throw obj3).Throw();
+		}
+		if (num == 1)
+		{
+			return result;
+		}
+		ILookup<TKey, TElement> result2 = default(ILookup<TKey, TElement>);
+		return result2;
 	}
 }

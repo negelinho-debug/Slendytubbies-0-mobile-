@@ -1,66 +1,57 @@
-using UnityEngine;
+using System;
+using System.Collections.Generic;
+using System.Runtime.CompilerServices;
 
-namespace Cysharp.Threading.Tasks.Internal
+namespace Cysharp.Threading.Tasks.Internal;
+
+internal static class ArrayUtil
 {
-	public class ArrayUtil : MonoBehaviour
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	public static void EnsureCapacity<T>(ref T[] array, int index)
 	{
-		/*
-		Dummy class. This could have happened for several reasons:
+		if (array.Length <= index)
+		{
+			EnsureCore(ref array, index);
+		}
+	}
 
-		1. No dll files were provided to AssetRipper.
+	[MethodImpl(MethodImplOptions.NoInlining)]
+	private static void EnsureCore<T>(ref T[] array, int index)
+	{
+		int num = array.Length * 2;
+		T[] array2 = new T[(index < num) ? num : (index * 2)];
+		Array.Copy(array, 0, array2, 0, array.Length);
+		array = array2;
+	}
 
-			Unity asset bundles and serialized files do not contain script information to decompile.
-				* For Mono games, that information is contained in .NET dll files.
-				* For Il2Cpp games, that information is contained in compiled C++ assemblies and the global metadata.
-				
-			AssetRipper usually expects games to conform to a normal file structure for Unity games of that platform.
-			A unexpected file structure could cause AssetRipper to not find the required files.
-
-		2. Incorrect dll files were provided to AssetRipper.
-
-			Any of the following could cause this:
-				* Il2CppInterop assemblies
-				* Deobfuscated assemblies
-				* Older assemblies (compared to when the bundle was built)
-				* Newer assemblies (compared to when the bundle was built)
-
-			Note: Although assembly publicizing is bad, it alone cannot cause empty scripts. See: https://github.com/AssetRipper/AssetRipper/issues/653
-
-		3. Assembly Reconstruction has not been implemented.
-
-			Asset bundles contain a small amount of information about the script content.
-			This information can be used to recover the serializable fields of a script.
-
-			See: https://github.com/AssetRipper/AssetRipper/issues/655
-	
-		4. This script is unnecessary.
-
-			If this script has no asset or script references, it can be deleted.
-			Be sure to resolve any compile errors before deleting because they can hide references.
-
-		5. Script Content Level 0
-
-			AssetRipper was set to not load any script information.
-
-		6. Cpp2IL failed to decompile Il2Cpp data
-
-			If this happened, there will be errors in the AssetRipper.log indicating that it happened.
-			This is an upstream problem, and the AssetRipper developer has very little control over it.
-			Please post a GitHub issue at: https://github.com/SamboyCoding/Cpp2IL/issues
-
-		7. An incorrect path was provided to AssetRipper.
-
-			This is characterized by "Mixed game structure has been found at" in the AssetRipper.log file.
-			AssetRipper expects games to conform to a normal file structure for Unity games of that platform.
-			An unexpected file structure could cause AssetRipper to not find the required files for script decompilation.
-			Generally, AssetRipper expects users to provide the root folder of the game. For example:
-				* Windows: the folder containing the game's .exe file
-				* Mac: the .app file/folder
-				* Linux: the folder containing the game's executable file
-				* Android: the apk file
-				* iOS: the ipa file
-				* Switch: the folder containing exefs and romfs
-
-		*/
+	public static (T[] array, int length) Materialize<T>(IEnumerable<T> source)
+	{
+		if (source is T[] array)
+		{
+			return (array: array, length: array.Length);
+		}
+		int num = 4;
+		if (source is ICollection<T> { Count: var count } collection)
+		{
+			T[] array2 = new T[count];
+			collection.CopyTo(array2, 0);
+			return (array: array2, length: count);
+		}
+		if (source is IReadOnlyCollection<T> readOnlyCollection)
+		{
+			num = readOnlyCollection.Count;
+		}
+		if (num == 0)
+		{
+			return (array: Array.Empty<T>(), length: 0);
+		}
+		int num2 = 0;
+		T[] array3 = new T[num];
+		foreach (T item in source)
+		{
+			EnsureCapacity(ref array3, num2);
+			array3[num2++] = item;
+		}
+		return (array: array3, length: num2);
 	}
 }

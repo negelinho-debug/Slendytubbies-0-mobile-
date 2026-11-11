@@ -1,66 +1,63 @@
-using UnityEngine;
+using System;
+using System.Threading.Tasks.Sources;
 
-namespace Cysharp.Threading.Tasks
+namespace Cysharp.Threading.Tasks;
+
+public abstract class MoveNextSource : IUniTaskSource<bool>, IUniTaskSource, IValueTaskSource, IValueTaskSource<bool>
 {
-	public class MoveNextSource : MonoBehaviour
+	protected UniTaskCompletionSourceCore<bool> completionSource;
+
+	public bool GetResult(short token)
 	{
-		/*
-		Dummy class. This could have happened for several reasons:
+		return completionSource.GetResult(token);
+	}
 
-		1. No dll files were provided to AssetRipper.
+	public UniTaskStatus GetStatus(short token)
+	{
+		return completionSource.GetStatus(token);
+	}
 
-			Unity asset bundles and serialized files do not contain script information to decompile.
-				* For Mono games, that information is contained in .NET dll files.
-				* For Il2Cpp games, that information is contained in compiled C++ assemblies and the global metadata.
-				
-			AssetRipper usually expects games to conform to a normal file structure for Unity games of that platform.
-			A unexpected file structure could cause AssetRipper to not find the required files.
+	public void OnCompleted(Action<object> continuation, object state, short token)
+	{
+		completionSource.OnCompleted(continuation, state, token);
+	}
 
-		2. Incorrect dll files were provided to AssetRipper.
+	public UniTaskStatus UnsafeGetStatus()
+	{
+		return completionSource.UnsafeGetStatus();
+	}
 
-			Any of the following could cause this:
-				* Il2CppInterop assemblies
-				* Deobfuscated assemblies
-				* Older assemblies (compared to when the bundle was built)
-				* Newer assemblies (compared to when the bundle was built)
+	void IUniTaskSource.GetResult(short token)
+	{
+		completionSource.GetResult(token);
+	}
 
-			Note: Although assembly publicizing is bad, it alone cannot cause empty scripts. See: https://github.com/AssetRipper/AssetRipper/issues/653
+	protected bool TryGetResult<T>(UniTask<T>.Awaiter awaiter, out T result)
+	{
+		try
+		{
+			result = awaiter.GetResult();
+			return true;
+		}
+		catch (Exception error)
+		{
+			completionSource.TrySetException(error);
+			result = default(T);
+			return false;
+		}
+	}
 
-		3. Assembly Reconstruction has not been implemented.
-
-			Asset bundles contain a small amount of information about the script content.
-			This information can be used to recover the serializable fields of a script.
-
-			See: https://github.com/AssetRipper/AssetRipper/issues/655
-	
-		4. This script is unnecessary.
-
-			If this script has no asset or script references, it can be deleted.
-			Be sure to resolve any compile errors before deleting because they can hide references.
-
-		5. Script Content Level 0
-
-			AssetRipper was set to not load any script information.
-
-		6. Cpp2IL failed to decompile Il2Cpp data
-
-			If this happened, there will be errors in the AssetRipper.log indicating that it happened.
-			This is an upstream problem, and the AssetRipper developer has very little control over it.
-			Please post a GitHub issue at: https://github.com/SamboyCoding/Cpp2IL/issues
-
-		7. An incorrect path was provided to AssetRipper.
-
-			This is characterized by "Mixed game structure has been found at" in the AssetRipper.log file.
-			AssetRipper expects games to conform to a normal file structure for Unity games of that platform.
-			An unexpected file structure could cause AssetRipper to not find the required files for script decompilation.
-			Generally, AssetRipper expects users to provide the root folder of the game. For example:
-				* Windows: the folder containing the game's .exe file
-				* Mac: the .app file/folder
-				* Linux: the folder containing the game's executable file
-				* Android: the apk file
-				* iOS: the ipa file
-				* Switch: the folder containing exefs and romfs
-
-		*/
+	protected bool TryGetResult(UniTask.Awaiter awaiter)
+	{
+		try
+		{
+			awaiter.GetResult();
+			return true;
+		}
+		catch (Exception error)
+		{
+			completionSource.TrySetException(error);
+			return false;
+		}
 	}
 }

@@ -1,66 +1,92 @@
-using UnityEngine;
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Text;
+using Cysharp.Threading.Tasks.Internal;
 
-namespace Cysharp.Threading.Tasks
+namespace Cysharp.Threading.Tasks;
+
+public static class TaskTracker
 {
-	public class TaskTracker : MonoBehaviour
+	private static List<KeyValuePair<IUniTaskSource, (string formattedType, int trackingId, DateTime addTime, string stackTrace)>> listPool = new List<KeyValuePair<IUniTaskSource, (string, int, DateTime, string)>>();
+
+	private static readonly WeakDictionary<IUniTaskSource, (string formattedType, int trackingId, DateTime addTime, string stackTrace)> tracking = new WeakDictionary<IUniTaskSource, (string, int, DateTime, string)>();
+
+	private static bool dirty;
+
+	[Conditional("UNITY_EDITOR")]
+	public static void TrackActiveTask(IUniTaskSource task, int skipFrame)
 	{
-		/*
-		Dummy class. This could have happened for several reasons:
+	}
 
-		1. No dll files were provided to AssetRipper.
+	[Conditional("UNITY_EDITOR")]
+	public static void RemoveTracking(IUniTaskSource task)
+	{
+	}
 
-			Unity asset bundles and serialized files do not contain script information to decompile.
-				* For Mono games, that information is contained in .NET dll files.
-				* For Il2Cpp games, that information is contained in compiled C++ assemblies and the global metadata.
-				
-			AssetRipper usually expects games to conform to a normal file structure for Unity games of that platform.
-			A unexpected file structure could cause AssetRipper to not find the required files.
+	public static bool CheckAndResetDirty()
+	{
+		bool result = dirty;
+		dirty = false;
+		return result;
+	}
 
-		2. Incorrect dll files were provided to AssetRipper.
+	public static void ForEachActiveTask(Action<int, string, UniTaskStatus, DateTime, string> action)
+	{
+		lock (listPool)
+		{
+			int num = tracking.ToList(ref listPool, clear: false);
+			try
+			{
+				for (int i = 0; i < num; i++)
+				{
+					action(listPool[i].Value.trackingId, listPool[i].Value.formattedType, listPool[i].Key.UnsafeGetStatus(), listPool[i].Value.addTime, listPool[i].Value.stackTrace);
+					listPool[i] = default(KeyValuePair<IUniTaskSource, (string, int, DateTime, string)>);
+				}
+			}
+			catch
+			{
+				listPool.Clear();
+				throw;
+			}
+		}
+	}
 
-			Any of the following could cause this:
-				* Il2CppInterop assemblies
-				* Deobfuscated assemblies
-				* Older assemblies (compared to when the bundle was built)
-				* Newer assemblies (compared to when the bundle was built)
-
-			Note: Although assembly publicizing is bad, it alone cannot cause empty scripts. See: https://github.com/AssetRipper/AssetRipper/issues/653
-
-		3. Assembly Reconstruction has not been implemented.
-
-			Asset bundles contain a small amount of information about the script content.
-			This information can be used to recover the serializable fields of a script.
-
-			See: https://github.com/AssetRipper/AssetRipper/issues/655
-	
-		4. This script is unnecessary.
-
-			If this script has no asset or script references, it can be deleted.
-			Be sure to resolve any compile errors before deleting because they can hide references.
-
-		5. Script Content Level 0
-
-			AssetRipper was set to not load any script information.
-
-		6. Cpp2IL failed to decompile Il2Cpp data
-
-			If this happened, there will be errors in the AssetRipper.log indicating that it happened.
-			This is an upstream problem, and the AssetRipper developer has very little control over it.
-			Please post a GitHub issue at: https://github.com/SamboyCoding/Cpp2IL/issues
-
-		7. An incorrect path was provided to AssetRipper.
-
-			This is characterized by "Mixed game structure has been found at" in the AssetRipper.log file.
-			AssetRipper expects games to conform to a normal file structure for Unity games of that platform.
-			An unexpected file structure could cause AssetRipper to not find the required files for script decompilation.
-			Generally, AssetRipper expects users to provide the root folder of the game. For example:
-				* Windows: the folder containing the game's .exe file
-				* Mac: the .app file/folder
-				* Linux: the folder containing the game's executable file
-				* Android: the apk file
-				* iOS: the ipa file
-				* Switch: the folder containing exefs and romfs
-
-		*/
+	private static void TypeBeautify(Type type, StringBuilder sb)
+	{
+		if (type.IsNested)
+		{
+			sb.Append(type.DeclaringType.Name.ToString());
+			sb.Append(".");
+		}
+		if (type.IsGenericType)
+		{
+			int num = type.Name.IndexOf("`");
+			if (num != -1)
+			{
+				sb.Append(type.Name.Substring(0, num));
+			}
+			else
+			{
+				sb.Append(type.Name);
+			}
+			sb.Append("<");
+			bool flag = true;
+			Type[] genericArguments = type.GetGenericArguments();
+			foreach (Type type2 in genericArguments)
+			{
+				if (!flag)
+				{
+					sb.Append(", ");
+				}
+				flag = false;
+				TypeBeautify(type2, sb);
+			}
+			sb.Append(">");
+		}
+		else
+		{
+			sb.Append(type.Name);
+		}
 	}
 }

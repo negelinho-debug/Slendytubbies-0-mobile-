@@ -1,66 +1,483 @@
+using System;
+using System.Collections.Generic;
+using FMOD;
+using FMOD.Studio;
 using UnityEngine;
+using UnityEngine.Serialization;
 
-namespace FMODUnity
+namespace FMODUnity;
+
+public abstract class Platform : ScriptableObject
 {
-	public class Platform : MonoBehaviour
+	public class Property<T>
 	{
-		/*
-		Dummy class. This could have happened for several reasons:
+		public T Value;
 
-		1. No dll files were provided to AssetRipper.
+		public bool HasValue;
+	}
 
-			Unity asset bundles and serialized files do not contain script information to decompile.
-				* For Mono games, that information is contained in .NET dll files.
-				* For Il2Cpp games, that information is contained in compiled C++ assemblies and the global metadata.
-				
-			AssetRipper usually expects games to conform to a normal file structure for Unity games of that platform.
-			A unexpected file structure could cause AssetRipper to not find the required files.
+	[Serializable]
+	public class PropertyBool : Property<TriStateBool>
+	{
+	}
 
-		2. Incorrect dll files were provided to AssetRipper.
+	[Serializable]
+	public class PropertyScreenPosition : Property<ScreenPosition>
+	{
+	}
 
-			Any of the following could cause this:
-				* Il2CppInterop assemblies
-				* Deobfuscated assemblies
-				* Older assemblies (compared to when the bundle was built)
-				* Newer assemblies (compared to when the bundle was built)
+	[Serializable]
+	public class PropertyInt : Property<int>
+	{
+	}
 
-			Note: Although assembly publicizing is bad, it alone cannot cause empty scripts. See: https://github.com/AssetRipper/AssetRipper/issues/653
+	[Serializable]
+	public class PropertySpeakerMode : Property<SPEAKERMODE>
+	{
+	}
 
-		3. Assembly Reconstruction has not been implemented.
+	[Serializable]
+	public class PropertyString : Property<string>
+	{
+	}
 
-			Asset bundles contain a small amount of information about the script content.
-			This information can be used to recover the serializable fields of a script.
+	[Serializable]
+	public class PropertyStringList : Property<List<string>>
+	{
+	}
 
-			See: https://github.com/AssetRipper/AssetRipper/issues/655
-	
-		4. This script is unnecessary.
+	[Serializable]
+	public class PropertyCallbackHandler : Property<PlatformCallbackHandler>
+	{
+	}
 
-			If this script has no asset or script references, it can be deleted.
-			Be sure to resolve any compile errors before deleting because they can hide references.
+	internal interface PropertyOverrideControl
+	{
+		bool HasValue(Platform platform);
 
-		5. Script Content Level 0
+		void Clear(Platform platform);
+	}
 
-			AssetRipper was set to not load any script information.
+	internal struct PropertyAccessor<T> : PropertyOverrideControl
+	{
+		private readonly Func<PropertyStorage, Property<T>> Getter;
 
-		6. Cpp2IL failed to decompile Il2Cpp data
+		private readonly T DefaultValue;
 
-			If this happened, there will be errors in the AssetRipper.log indicating that it happened.
-			This is an upstream problem, and the AssetRipper developer has very little control over it.
-			Please post a GitHub issue at: https://github.com/SamboyCoding/Cpp2IL/issues
+		public PropertyAccessor(Func<PropertyStorage, Property<T>> getter, T defaultValue)
+		{
+			Getter = getter;
+			DefaultValue = defaultValue;
+		}
 
-		7. An incorrect path was provided to AssetRipper.
+		public bool HasValue(Platform platform)
+		{
+			if (platform.Active)
+			{
+				return Getter(platform.Properties).HasValue;
+			}
+			return false;
+		}
 
-			This is characterized by "Mixed game structure has been found at" in the AssetRipper.log file.
-			AssetRipper expects games to conform to a normal file structure for Unity games of that platform.
-			An unexpected file structure could cause AssetRipper to not find the required files for script decompilation.
-			Generally, AssetRipper expects users to provide the root folder of the game. For example:
-				* Windows: the folder containing the game's .exe file
-				* Mac: the .app file/folder
-				* Linux: the folder containing the game's executable file
-				* Android: the apk file
-				* iOS: the ipa file
-				* Switch: the folder containing exefs and romfs
+		public T Get(Platform platform)
+		{
+			Platform platform2 = platform;
+			while (platform2 != null)
+			{
+				if (platform2.Active)
+				{
+					Property<T> property = Getter(platform2.Properties);
+					if (property.HasValue)
+					{
+						return property.Value;
+					}
+				}
+				platform2 = platform2.Parent;
+			}
+			return DefaultValue;
+		}
 
-		*/
+		public void Set(Platform platform, T value)
+		{
+			Property<T> property = Getter(platform.Properties);
+			property.Value = value;
+			property.HasValue = true;
+		}
+
+		public void Clear(Platform platform)
+		{
+			Getter(platform.Properties).HasValue = false;
+		}
+	}
+
+	[Serializable]
+	public class PropertyStorage
+	{
+		public PropertyBool LiveUpdate = new PropertyBool();
+
+		public PropertyInt LiveUpdatePort = new PropertyInt();
+
+		public PropertyBool Overlay = new PropertyBool();
+
+		public PropertyScreenPosition OverlayPosition = new PropertyScreenPosition();
+
+		public PropertyInt OverlayFontSize = new PropertyInt();
+
+		public PropertyBool Logging = new PropertyBool();
+
+		public PropertyInt SampleRate = new PropertyInt();
+
+		public PropertyString BuildDirectory = new PropertyString();
+
+		public PropertySpeakerMode SpeakerMode = new PropertySpeakerMode();
+
+		public PropertyInt VirtualChannelCount = new PropertyInt();
+
+		public PropertyInt RealChannelCount = new PropertyInt();
+
+		public PropertyInt DSPBufferLength = new PropertyInt();
+
+		public PropertyInt DSPBufferCount = new PropertyInt();
+
+		public PropertyStringList Plugins = new PropertyStringList();
+
+		public PropertyStringList StaticPlugins = new PropertyStringList();
+
+		public PropertyCallbackHandler CallbackHandler = new PropertyCallbackHandler();
+	}
+
+	internal static class PropertyAccessors
+	{
+		public static readonly PropertyAccessor<TriStateBool> LiveUpdate = new PropertyAccessor<TriStateBool>((PropertyStorage properties) => properties.LiveUpdate, TriStateBool.Disabled);
+
+		public static readonly PropertyAccessor<int> LiveUpdatePort = new PropertyAccessor<int>((PropertyStorage properties) => properties.LiveUpdatePort, 9264);
+
+		public static readonly PropertyAccessor<TriStateBool> Overlay = new PropertyAccessor<TriStateBool>((PropertyStorage properties) => properties.Overlay, TriStateBool.Disabled);
+
+		public static readonly PropertyAccessor<ScreenPosition> OverlayPosition = new PropertyAccessor<ScreenPosition>((PropertyStorage properties) => properties.OverlayPosition, ScreenPosition.TopLeft);
+
+		public static readonly PropertyAccessor<int> OverlayFontSize = new PropertyAccessor<int>((PropertyStorage properties) => properties.OverlayFontSize, 14);
+
+		public static readonly PropertyAccessor<TriStateBool> Logging = new PropertyAccessor<TriStateBool>((PropertyStorage properties) => properties.Logging, TriStateBool.Disabled);
+
+		public static readonly PropertyAccessor<int> SampleRate = new PropertyAccessor<int>((PropertyStorage properties) => properties.SampleRate, 0);
+
+		public static readonly PropertyAccessor<string> BuildDirectory = new PropertyAccessor<string>((PropertyStorage properties) => properties.BuildDirectory, "Desktop");
+
+		public static readonly PropertyAccessor<SPEAKERMODE> SpeakerMode = new PropertyAccessor<SPEAKERMODE>((PropertyStorage properties) => properties.SpeakerMode, SPEAKERMODE.STEREO);
+
+		public static readonly PropertyAccessor<int> VirtualChannelCount = new PropertyAccessor<int>((PropertyStorage properties) => properties.VirtualChannelCount, 128);
+
+		public static readonly PropertyAccessor<int> RealChannelCount = new PropertyAccessor<int>((PropertyStorage properties) => properties.RealChannelCount, 32);
+
+		public static readonly PropertyAccessor<int> DSPBufferLength = new PropertyAccessor<int>((PropertyStorage properties) => properties.DSPBufferLength, 0);
+
+		public static readonly PropertyAccessor<int> DSPBufferCount = new PropertyAccessor<int>((PropertyStorage properties) => properties.DSPBufferCount, 0);
+
+		public static readonly PropertyAccessor<List<string>> Plugins = new PropertyAccessor<List<string>>((PropertyStorage properties) => properties.Plugins, null);
+
+		public static readonly PropertyAccessor<List<string>> StaticPlugins = new PropertyAccessor<List<string>>((PropertyStorage properties) => properties.StaticPlugins, null);
+
+		public static readonly PropertyAccessor<PlatformCallbackHandler> CallbackHandler = new PropertyAccessor<PlatformCallbackHandler>((PropertyStorage properties) => properties.CallbackHandler, null);
+	}
+
+	[Serializable]
+	public class PropertyThreadAffinityList : Property<List<ThreadAffinityGroup>>
+	{
+	}
+
+	[Serializable]
+	internal class PropertyCodecChannels : Property<List<CodecChannelCount>>
+	{
+	}
+
+	internal const float DefaultPriority = 0f;
+
+	internal const string RegisterStaticPluginsClassName = "StaticPluginManager";
+
+	internal const string RegisterStaticPluginsFunctionName = "Register";
+
+	[SerializeField]
+	private string identifier;
+
+	[SerializeField]
+	private string parentIdentifier;
+
+	[SerializeField]
+	private bool active;
+
+	[SerializeField]
+	protected PropertyStorage Properties = new PropertyStorage();
+
+	[SerializeField]
+	[FormerlySerializedAs("outputType")]
+	internal string OutputTypeName;
+
+	private static List<ThreadAffinityGroup> StaticThreadAffinities = new List<ThreadAffinityGroup>();
+
+	[SerializeField]
+	private PropertyThreadAffinityList threadAffinities = new PropertyThreadAffinityList();
+
+	[NonSerialized]
+	public Platform Parent;
+
+	private static List<CodecChannelCount> staticCodecChannels = new List<CodecChannelCount>
+	{
+		new CodecChannelCount
+		{
+			format = CodecType.FADPCM,
+			channels = 32
+		},
+		new CodecChannelCount
+		{
+			format = CodecType.Vorbis,
+			channels = 0
+		}
+	};
+
+	[SerializeField]
+	private PropertyCodecChannels codecChannels = new PropertyCodecChannels();
+
+	internal string Identifier
+	{
+		get
+		{
+			return identifier;
+		}
+		set
+		{
+			identifier = value;
+		}
+	}
+
+	internal abstract string DisplayName { get; }
+
+	internal virtual float Priority => 0f;
+
+	internal virtual bool MatchesCurrentEnvironment => true;
+
+	internal virtual bool IsIntrinsic => false;
+
+	internal string ParentIdentifier
+	{
+		get
+		{
+			return parentIdentifier;
+		}
+		set
+		{
+			parentIdentifier = value;
+		}
+	}
+
+	internal bool IsLiveUpdateEnabled => LiveUpdate == TriStateBool.Enabled;
+
+	internal bool IsOverlayEnabled => Overlay == TriStateBool.Enabled;
+
+	internal bool Active => active;
+
+	internal bool HasAnyOverriddenProperties
+	{
+		get
+		{
+			if (active)
+			{
+				if (!Properties.LiveUpdate.HasValue && !Properties.LiveUpdatePort.HasValue && !Properties.Overlay.HasValue && !Properties.OverlayPosition.HasValue && !Properties.OverlayFontSize.HasValue && !Properties.Logging.HasValue && !Properties.SampleRate.HasValue && !Properties.BuildDirectory.HasValue && !Properties.SpeakerMode.HasValue && !Properties.VirtualChannelCount.HasValue && !Properties.RealChannelCount.HasValue && !Properties.DSPBufferLength.HasValue && !Properties.DSPBufferCount.HasValue && !Properties.Plugins.HasValue)
+				{
+					return Properties.StaticPlugins.HasValue;
+				}
+				return true;
+			}
+			return false;
+		}
+	}
+
+	public TriStateBool LiveUpdate => PropertyAccessors.LiveUpdate.Get(this);
+
+	public int LiveUpdatePort => PropertyAccessors.LiveUpdatePort.Get(this);
+
+	public TriStateBool Overlay => PropertyAccessors.Overlay.Get(this);
+
+	public ScreenPosition OverlayRect => PropertyAccessors.OverlayPosition.Get(this);
+
+	public int OverlayFontSize => PropertyAccessors.OverlayFontSize.Get(this);
+
+	public TriStateBool Logging => PropertyAccessors.Logging.Get(this);
+
+	public int SampleRate => PropertyAccessors.SampleRate.Get(this);
+
+	public string BuildDirectory => PropertyAccessors.BuildDirectory.Get(this);
+
+	public SPEAKERMODE SpeakerMode => PropertyAccessors.SpeakerMode.Get(this);
+
+	public int VirtualChannelCount => PropertyAccessors.VirtualChannelCount.Get(this);
+
+	public int RealChannelCount => PropertyAccessors.RealChannelCount.Get(this);
+
+	public int DSPBufferLength => PropertyAccessors.DSPBufferLength.Get(this);
+
+	public int DSPBufferCount => PropertyAccessors.DSPBufferCount.Get(this);
+
+	public List<string> Plugins => PropertyAccessors.Plugins.Get(this);
+
+	public List<string> StaticPlugins => PropertyAccessors.StaticPlugins.Get(this);
+
+	public PlatformCallbackHandler CallbackHandler => PropertyAccessors.CallbackHandler.Get(this);
+
+	internal virtual List<ThreadAffinityGroup> DefaultThreadAffinities => StaticThreadAffinities;
+
+	public IEnumerable<ThreadAffinityGroup> ThreadAffinities
+	{
+		get
+		{
+			if (threadAffinities.HasValue)
+			{
+				return threadAffinities.Value;
+			}
+			return DefaultThreadAffinities;
+		}
+	}
+
+	internal PropertyThreadAffinityList ThreadAffinitiesProperty => threadAffinities;
+
+	internal virtual List<CodecChannelCount> DefaultCodecChannels => staticCodecChannels;
+
+	internal List<CodecChannelCount> CodecChannels
+	{
+		get
+		{
+			if (codecChannels.HasValue)
+			{
+				return codecChannels.Value;
+			}
+			return DefaultCodecChannels;
+		}
+	}
+
+	internal PropertyCodecChannels CodecChannelsProperty => codecChannels;
+
+	internal abstract void DeclareRuntimePlatforms(Settings settings);
+
+	internal virtual void PreSystemCreate(Action<RESULT, string> reportResult)
+	{
+	}
+
+	internal virtual void PreInitialize(FMOD.Studio.System studioSystem)
+	{
+	}
+
+	internal virtual string GetBankFolder()
+	{
+		return Application.streamingAssetsPath;
+	}
+
+	protected virtual string GetPluginBasePath()
+	{
+		return $"{Application.dataPath}/Plugins";
+	}
+
+	internal virtual string GetPluginPath(string pluginName)
+	{
+		throw new NotImplementedException($"Plugins are not implemented on platform {Identifier}");
+	}
+
+	internal virtual void LoadPlugins(FMOD.System coreSystem, Action<RESULT, string> reportResult)
+	{
+		LoadDynamicPlugins(coreSystem, reportResult);
+		LoadStaticPlugins(coreSystem, reportResult);
+	}
+
+	internal virtual void LoadDynamicPlugins(FMOD.System coreSystem, Action<RESULT, string> reportResult)
+	{
+		List<string> plugins = Plugins;
+		if (plugins == null)
+		{
+			return;
+		}
+		foreach (string item in plugins)
+		{
+			if (!string.IsNullOrEmpty(item))
+			{
+				string pluginPath = GetPluginPath(item);
+				uint handle;
+				RESULT rESULT = coreSystem.loadPlugin(pluginPath, out handle);
+				if (rESULT == RESULT.ERR_FILE_BAD || rESULT == RESULT.ERR_FILE_NOTFOUND)
+				{
+					string pluginPath2 = GetPluginPath(item + "64");
+					rESULT = coreSystem.loadPlugin(pluginPath2, out handle);
+				}
+				reportResult(rESULT, $"Loading plugin '{item}' from '{pluginPath}'");
+			}
+		}
+	}
+
+	internal virtual void LoadStaticPlugins(FMOD.System coreSystem, Action<RESULT, string> reportResult)
+	{
+		if (StaticPlugins.Count > 0)
+		{
+			RuntimeUtils.DebugLogWarningFormat("FMOD: {0} static plugins specified, but static plugins are only supported on the IL2CPP scripting backend", StaticPlugins.Count);
+		}
+	}
+
+	internal void AffirmProperties()
+	{
+		if (!active)
+		{
+			Properties = new PropertyStorage();
+			InitializeProperties();
+			active = true;
+		}
+	}
+
+	internal void ClearProperties()
+	{
+		if (active)
+		{
+			Properties = new PropertyStorage();
+			active = false;
+		}
+	}
+
+	internal virtual void InitializeProperties()
+	{
+		if (!IsIntrinsic)
+		{
+			ParentIdentifier = "default";
+		}
+	}
+
+	internal virtual void EnsurePropertiesAreValid()
+	{
+		if (!IsIntrinsic && string.IsNullOrEmpty(ParentIdentifier))
+		{
+			ParentIdentifier = "default";
+		}
+	}
+
+	public void SetOverlayFontSize(int size)
+	{
+		PropertyAccessors.OverlayFontSize.Set(this, size);
+	}
+
+	internal bool InheritsFrom(Platform platform)
+	{
+		if (platform == this)
+		{
+			return true;
+		}
+		if (Parent != null)
+		{
+			return Parent.InheritsFrom(platform);
+		}
+		return false;
+	}
+
+	internal OUTPUTTYPE GetOutputType()
+	{
+		if (Enum.IsDefined(typeof(OUTPUTTYPE), OutputTypeName))
+		{
+			return (OUTPUTTYPE)Enum.Parse(typeof(OUTPUTTYPE), OutputTypeName);
+		}
+		return OUTPUTTYPE.AUTODETECT;
 	}
 }

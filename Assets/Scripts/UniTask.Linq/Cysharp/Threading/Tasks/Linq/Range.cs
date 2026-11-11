@@ -1,66 +1,58 @@
-using UnityEngine;
+using System.Threading;
 
-namespace Cysharp.Threading.Tasks.Linq
+namespace Cysharp.Threading.Tasks.Linq;
+
+internal class Range : IUniTaskAsyncEnumerable<int>
 {
-	public class Range : MonoBehaviour
+	private class _Range : IUniTaskAsyncEnumerator<int>, IUniTaskAsyncDisposable
 	{
-		/*
-		Dummy class. This could have happened for several reasons:
+		private readonly int start;
 
-		1. No dll files were provided to AssetRipper.
+		private readonly int end;
 
-			Unity asset bundles and serialized files do not contain script information to decompile.
-				* For Mono games, that information is contained in .NET dll files.
-				* For Il2Cpp games, that information is contained in compiled C++ assemblies and the global metadata.
-				
-			AssetRipper usually expects games to conform to a normal file structure for Unity games of that platform.
-			A unexpected file structure could cause AssetRipper to not find the required files.
+		private int current;
 
-		2. Incorrect dll files were provided to AssetRipper.
+		private CancellationToken cancellationToken;
 
-			Any of the following could cause this:
-				* Il2CppInterop assemblies
-				* Deobfuscated assemblies
-				* Older assemblies (compared to when the bundle was built)
-				* Newer assemblies (compared to when the bundle was built)
+		public int Current => current;
 
-			Note: Although assembly publicizing is bad, it alone cannot cause empty scripts. See: https://github.com/AssetRipper/AssetRipper/issues/653
+		public _Range(int start, int end, CancellationToken cancellationToken)
+		{
+			this.start = start;
+			this.end = end;
+			this.cancellationToken = cancellationToken;
+			current = start - 1;
+		}
 
-		3. Assembly Reconstruction has not been implemented.
+		public UniTask<bool> MoveNextAsync()
+		{
+			cancellationToken.ThrowIfCancellationRequested();
+			current++;
+			if (current != end)
+			{
+				return CompletedTasks.True;
+			}
+			return CompletedTasks.False;
+		}
 
-			Asset bundles contain a small amount of information about the script content.
-			This information can be used to recover the serializable fields of a script.
+		public UniTask DisposeAsync()
+		{
+			return default(UniTask);
+		}
+	}
 
-			See: https://github.com/AssetRipper/AssetRipper/issues/655
-	
-		4. This script is unnecessary.
+	private readonly int start;
 
-			If this script has no asset or script references, it can be deleted.
-			Be sure to resolve any compile errors before deleting because they can hide references.
+	private readonly int end;
 
-		5. Script Content Level 0
+	public Range(int start, int count)
+	{
+		this.start = start;
+		end = start + count;
+	}
 
-			AssetRipper was set to not load any script information.
-
-		6. Cpp2IL failed to decompile Il2Cpp data
-
-			If this happened, there will be errors in the AssetRipper.log indicating that it happened.
-			This is an upstream problem, and the AssetRipper developer has very little control over it.
-			Please post a GitHub issue at: https://github.com/SamboyCoding/Cpp2IL/issues
-
-		7. An incorrect path was provided to AssetRipper.
-
-			This is characterized by "Mixed game structure has been found at" in the AssetRipper.log file.
-			AssetRipper expects games to conform to a normal file structure for Unity games of that platform.
-			An unexpected file structure could cause AssetRipper to not find the required files for script decompilation.
-			Generally, AssetRipper expects users to provide the root folder of the game. For example:
-				* Windows: the folder containing the game's .exe file
-				* Mac: the .app file/folder
-				* Linux: the folder containing the game's executable file
-				* Android: the apk file
-				* iOS: the ipa file
-				* Switch: the folder containing exefs and romfs
-
-		*/
+	public IUniTaskAsyncEnumerator<int> GetAsyncEnumerator(CancellationToken cancellationToken = default(CancellationToken))
+	{
+		return new _Range(start, end, cancellationToken);
 	}
 }

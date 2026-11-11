@@ -1,66 +1,200 @@
-using UnityEngine;
+using System;
+using System.Diagnostics;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using System.Security;
 
-namespace Cysharp.Threading.Tasks.CompilerServices
+namespace Cysharp.Threading.Tasks.CompilerServices;
+
+[StructLayout(LayoutKind.Auto)]
+public struct AsyncUniTaskMethodBuilder
 {
-	public class AsyncUniTaskMethodBuilder : MonoBehaviour
+	private IStateMachineRunnerPromise runnerPromise;
+
+	private Exception ex;
+
+	public UniTask Task
 	{
-		/*
-		Dummy class. This could have happened for several reasons:
+		[MethodImpl(MethodImplOptions.AggressiveInlining)]
+		[DebuggerHidden]
+		get
+		{
+			if (runnerPromise != null)
+			{
+				return runnerPromise.Task;
+			}
+			if (ex != null)
+			{
+				return UniTask.FromException(ex);
+			}
+			return UniTask.CompletedTask;
+		}
+	}
 
-		1. No dll files were provided to AssetRipper.
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	[DebuggerHidden]
+	public static AsyncUniTaskMethodBuilder Create()
+	{
+		return default(AsyncUniTaskMethodBuilder);
+	}
 
-			Unity asset bundles and serialized files do not contain script information to decompile.
-				* For Mono games, that information is contained in .NET dll files.
-				* For Il2Cpp games, that information is contained in compiled C++ assemblies and the global metadata.
-				
-			AssetRipper usually expects games to conform to a normal file structure for Unity games of that platform.
-			A unexpected file structure could cause AssetRipper to not find the required files.
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	[DebuggerHidden]
+	public void SetException(Exception exception)
+	{
+		if (runnerPromise == null)
+		{
+			ex = exception;
+		}
+		else
+		{
+			runnerPromise.SetException(exception);
+		}
+	}
 
-		2. Incorrect dll files were provided to AssetRipper.
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	[DebuggerHidden]
+	public void SetResult()
+	{
+		if (runnerPromise != null)
+		{
+			runnerPromise.SetResult();
+		}
+	}
 
-			Any of the following could cause this:
-				* Il2CppInterop assemblies
-				* Deobfuscated assemblies
-				* Older assemblies (compared to when the bundle was built)
-				* Newer assemblies (compared to when the bundle was built)
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	[DebuggerHidden]
+	public void AwaitOnCompleted<TAwaiter, TStateMachine>(ref TAwaiter awaiter, ref TStateMachine stateMachine) where TAwaiter : INotifyCompletion where TStateMachine : IAsyncStateMachine
+	{
+		if (runnerPromise == null)
+		{
+			AsyncUniTask<TStateMachine>.SetStateMachine(ref stateMachine, ref runnerPromise);
+		}
+		Action moveNext = runnerPromise.MoveNext;
+		awaiter.OnCompleted(moveNext);
+	}
 
-			Note: Although assembly publicizing is bad, it alone cannot cause empty scripts. See: https://github.com/AssetRipper/AssetRipper/issues/653
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	[DebuggerHidden]
+	[SecuritySafeCritical]
+	public void AwaitUnsafeOnCompleted<TAwaiter, TStateMachine>(ref TAwaiter awaiter, ref TStateMachine stateMachine) where TAwaiter : ICriticalNotifyCompletion where TStateMachine : IAsyncStateMachine
+	{
+		if (runnerPromise == null)
+		{
+			AsyncUniTask<TStateMachine>.SetStateMachine(ref stateMachine, ref runnerPromise);
+		}
+		Action moveNext = runnerPromise.MoveNext;
+		awaiter.UnsafeOnCompleted(moveNext);
+	}
 
-		3. Assembly Reconstruction has not been implemented.
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	[DebuggerHidden]
+	public void Start<TStateMachine>(ref TStateMachine stateMachine) where TStateMachine : IAsyncStateMachine
+	{
+		stateMachine.MoveNext();
+	}
 
-			Asset bundles contain a small amount of information about the script content.
-			This information can be used to recover the serializable fields of a script.
+	[DebuggerHidden]
+	public void SetStateMachine(IAsyncStateMachine stateMachine)
+	{
+	}
+}
+[StructLayout(LayoutKind.Auto)]
+public struct AsyncUniTaskMethodBuilder<T>
+{
+	private IStateMachineRunnerPromise<T> runnerPromise;
 
-			See: https://github.com/AssetRipper/AssetRipper/issues/655
-	
-		4. This script is unnecessary.
+	private Exception ex;
 
-			If this script has no asset or script references, it can be deleted.
-			Be sure to resolve any compile errors before deleting because they can hide references.
+	private T result;
 
-		5. Script Content Level 0
+	public UniTask<T> Task
+	{
+		[MethodImpl(MethodImplOptions.AggressiveInlining)]
+		[DebuggerHidden]
+		get
+		{
+			if (runnerPromise != null)
+			{
+				return runnerPromise.Task;
+			}
+			if (ex != null)
+			{
+				return UniTask.FromException<T>(ex);
+			}
+			return UniTask.FromResult(result);
+		}
+	}
 
-			AssetRipper was set to not load any script information.
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	[DebuggerHidden]
+	public static AsyncUniTaskMethodBuilder<T> Create()
+	{
+		return default(AsyncUniTaskMethodBuilder<T>);
+	}
 
-		6. Cpp2IL failed to decompile Il2Cpp data
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	[DebuggerHidden]
+	public void SetException(Exception exception)
+	{
+		if (runnerPromise == null)
+		{
+			ex = exception;
+		}
+		else
+		{
+			runnerPromise.SetException(exception);
+		}
+	}
 
-			If this happened, there will be errors in the AssetRipper.log indicating that it happened.
-			This is an upstream problem, and the AssetRipper developer has very little control over it.
-			Please post a GitHub issue at: https://github.com/SamboyCoding/Cpp2IL/issues
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	[DebuggerHidden]
+	public void SetResult(T result)
+	{
+		if (runnerPromise == null)
+		{
+			this.result = result;
+		}
+		else
+		{
+			runnerPromise.SetResult(result);
+		}
+	}
 
-		7. An incorrect path was provided to AssetRipper.
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	[DebuggerHidden]
+	public void AwaitOnCompleted<TAwaiter, TStateMachine>(ref TAwaiter awaiter, ref TStateMachine stateMachine) where TAwaiter : INotifyCompletion where TStateMachine : IAsyncStateMachine
+	{
+		if (runnerPromise == null)
+		{
+			AsyncUniTask<TStateMachine, T>.SetStateMachine(ref stateMachine, ref runnerPromise);
+		}
+		Action moveNext = runnerPromise.MoveNext;
+		awaiter.OnCompleted(moveNext);
+	}
 
-			This is characterized by "Mixed game structure has been found at" in the AssetRipper.log file.
-			AssetRipper expects games to conform to a normal file structure for Unity games of that platform.
-			An unexpected file structure could cause AssetRipper to not find the required files for script decompilation.
-			Generally, AssetRipper expects users to provide the root folder of the game. For example:
-				* Windows: the folder containing the game's .exe file
-				* Mac: the .app file/folder
-				* Linux: the folder containing the game's executable file
-				* Android: the apk file
-				* iOS: the ipa file
-				* Switch: the folder containing exefs and romfs
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	[DebuggerHidden]
+	[SecuritySafeCritical]
+	public void AwaitUnsafeOnCompleted<TAwaiter, TStateMachine>(ref TAwaiter awaiter, ref TStateMachine stateMachine) where TAwaiter : ICriticalNotifyCompletion where TStateMachine : IAsyncStateMachine
+	{
+		if (runnerPromise == null)
+		{
+			AsyncUniTask<TStateMachine, T>.SetStateMachine(ref stateMachine, ref runnerPromise);
+		}
+		Action moveNext = runnerPromise.MoveNext;
+		awaiter.UnsafeOnCompleted(moveNext);
+	}
 
-		*/
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	[DebuggerHidden]
+	public void Start<TStateMachine>(ref TStateMachine stateMachine) where TStateMachine : IAsyncStateMachine
+	{
+		stateMachine.MoveNext();
+	}
+
+	[DebuggerHidden]
+	public void SetStateMachine(IAsyncStateMachine stateMachine)
+	{
 	}
 }

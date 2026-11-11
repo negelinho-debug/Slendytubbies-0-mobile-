@@ -1,66 +1,80 @@
+using System.Threading;
 using UnityEngine;
 
-namespace Cysharp.Threading.Tasks.Triggers
+namespace Cysharp.Threading.Tasks.Triggers;
+
+[DisallowMultipleComponent]
+public sealed class AsyncDestroyTrigger : MonoBehaviour
 {
-	public class AsyncDestroyTrigger : MonoBehaviour
+	private class AwakeMonitor : IPlayerLoopItem
 	{
-		/*
-		Dummy class. This could have happened for several reasons:
+		private readonly AsyncDestroyTrigger trigger;
 
-		1. No dll files were provided to AssetRipper.
+		public AwakeMonitor(AsyncDestroyTrigger trigger)
+		{
+			this.trigger = trigger;
+		}
 
-			Unity asset bundles and serialized files do not contain script information to decompile.
-				* For Mono games, that information is contained in .NET dll files.
-				* For Il2Cpp games, that information is contained in compiled C++ assemblies and the global metadata.
-				
-			AssetRipper usually expects games to conform to a normal file structure for Unity games of that platform.
-			A unexpected file structure could cause AssetRipper to not find the required files.
+		public bool MoveNext()
+		{
+			if (trigger.called || trigger.awakeCalled)
+			{
+				return false;
+			}
+			if (trigger == null)
+			{
+				trigger.OnDestroy();
+				return false;
+			}
+			return true;
+		}
+	}
 
-		2. Incorrect dll files were provided to AssetRipper.
+	private bool awakeCalled;
 
-			Any of the following could cause this:
-				* Il2CppInterop assemblies
-				* Deobfuscated assemblies
-				* Older assemblies (compared to when the bundle was built)
-				* Newer assemblies (compared to when the bundle was built)
+	private bool called;
 
-			Note: Although assembly publicizing is bad, it alone cannot cause empty scripts. See: https://github.com/AssetRipper/AssetRipper/issues/653
+	private CancellationTokenSource cancellationTokenSource;
 
-		3. Assembly Reconstruction has not been implemented.
+	public CancellationToken CancellationToken
+	{
+		get
+		{
+			if (cancellationTokenSource == null)
+			{
+				cancellationTokenSource = new CancellationTokenSource();
+				if (!awakeCalled)
+				{
+					PlayerLoopHelper.AddAction(PlayerLoopTiming.Update, new AwakeMonitor(this));
+				}
+			}
+			return cancellationTokenSource.Token;
+		}
+	}
 
-			Asset bundles contain a small amount of information about the script content.
-			This information can be used to recover the serializable fields of a script.
+	private void Awake()
+	{
+		awakeCalled = true;
+	}
 
-			See: https://github.com/AssetRipper/AssetRipper/issues/655
-	
-		4. This script is unnecessary.
+	private void OnDestroy()
+	{
+		called = true;
+		cancellationTokenSource?.Cancel();
+		cancellationTokenSource?.Dispose();
+	}
 
-			If this script has no asset or script references, it can be deleted.
-			Be sure to resolve any compile errors before deleting because they can hide references.
-
-		5. Script Content Level 0
-
-			AssetRipper was set to not load any script information.
-
-		6. Cpp2IL failed to decompile Il2Cpp data
-
-			If this happened, there will be errors in the AssetRipper.log indicating that it happened.
-			This is an upstream problem, and the AssetRipper developer has very little control over it.
-			Please post a GitHub issue at: https://github.com/SamboyCoding/Cpp2IL/issues
-
-		7. An incorrect path was provided to AssetRipper.
-
-			This is characterized by "Mixed game structure has been found at" in the AssetRipper.log file.
-			AssetRipper expects games to conform to a normal file structure for Unity games of that platform.
-			An unexpected file structure could cause AssetRipper to not find the required files for script decompilation.
-			Generally, AssetRipper expects users to provide the root folder of the game. For example:
-				* Windows: the folder containing the game's .exe file
-				* Mac: the .app file/folder
-				* Linux: the folder containing the game's executable file
-				* Android: the apk file
-				* iOS: the ipa file
-				* Switch: the folder containing exefs and romfs
-
-		*/
+	public UniTask OnDestroyAsync()
+	{
+		if (called)
+		{
+			return UniTask.CompletedTask;
+		}
+		UniTaskCompletionSource uniTaskCompletionSource = new UniTaskCompletionSource();
+		CancellationToken.RegisterWithoutCaptureExecutionContext(delegate(object state)
+		{
+			((UniTaskCompletionSource)state).TrySetResult();
+		}, uniTaskCompletionSource);
+		return uniTaskCompletionSource.Task;
 	}
 }

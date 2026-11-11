@@ -1,66 +1,361 @@
-using UnityEngine;
+using System;
+using System.Runtime.ExceptionServices;
+using System.Threading;
 
-namespace Cysharp.Threading.Tasks.Linq
+namespace Cysharp.Threading.Tasks.Linq;
+
+internal static class Subscribe
 {
-	public class Subscribe : MonoBehaviour
+	public static readonly Action<Exception> NopError = delegate
 	{
-		/*
-		Dummy class. This could have happened for several reasons:
+	};
 
-		1. No dll files were provided to AssetRipper.
+	public static readonly Action NopCompleted = delegate
+	{
+	};
 
-			Unity asset bundles and serialized files do not contain script information to decompile.
-				* For Mono games, that information is contained in .NET dll files.
-				* For Il2Cpp games, that information is contained in compiled C++ assemblies and the global metadata.
-				
-			AssetRipper usually expects games to conform to a normal file structure for Unity games of that platform.
-			A unexpected file structure could cause AssetRipper to not find the required files.
+	public static async UniTaskVoid SubscribeCore<TSource>(IUniTaskAsyncEnumerable<TSource> source, Action<TSource> onNext, Action<Exception> onError, Action onCompleted, CancellationToken cancellationToken)
+	{
+		IUniTaskAsyncEnumerator<TSource> e = source.GetAsyncEnumerator(cancellationToken);
+		object obj = null;
+		int num = 0;
+		try
+		{
+			try
+			{
+				while (await e.MoveNextAsync())
+				{
+					try
+					{
+						onNext(e.Current);
+					}
+					catch (Exception ex)
+					{
+						UniTaskScheduler.PublishUnobservedTaskException(ex);
+					}
+				}
+				onCompleted();
+			}
+			catch (Exception ex2)
+			{
+				if (onError == NopError)
+				{
+					UniTaskScheduler.PublishUnobservedTaskException(ex2);
+					goto IL_0109;
+				}
+				if (ex2 is OperationCanceledException)
+				{
+					goto IL_0109;
+				}
+				onError(ex2);
+			}
+			goto end_IL_0037;
+			IL_0109:
+			num = 1;
+			end_IL_0037:;
+		}
+		catch (object obj2)
+		{
+			obj = obj2;
+		}
+		if (e != null)
+		{
+			await e.DisposeAsync();
+		}
+		object obj3 = obj;
+		if (obj3 != null)
+		{
+			ExceptionDispatchInfo.Capture((obj3 as Exception) ?? throw obj3).Throw();
+		}
+		if (num != 1)
+		{
+		}
+	}
 
-		2. Incorrect dll files were provided to AssetRipper.
+	public static async UniTaskVoid SubscribeCore<TSource>(IUniTaskAsyncEnumerable<TSource> source, Func<TSource, UniTaskVoid> onNext, Action<Exception> onError, Action onCompleted, CancellationToken cancellationToken)
+	{
+		IUniTaskAsyncEnumerator<TSource> e = source.GetAsyncEnumerator(cancellationToken);
+		object obj = null;
+		int num = 0;
+		try
+		{
+			try
+			{
+				while (await e.MoveNextAsync())
+				{
+					try
+					{
+						onNext(e.Current).Forget();
+					}
+					catch (Exception ex)
+					{
+						UniTaskScheduler.PublishUnobservedTaskException(ex);
+					}
+				}
+				onCompleted();
+			}
+			catch (Exception ex2)
+			{
+				if (onError == NopError)
+				{
+					UniTaskScheduler.PublishUnobservedTaskException(ex2);
+					goto IL_0115;
+				}
+				if (ex2 is OperationCanceledException)
+				{
+					goto IL_0115;
+				}
+				onError(ex2);
+			}
+			goto end_IL_0037;
+			IL_0115:
+			num = 1;
+			end_IL_0037:;
+		}
+		catch (object obj2)
+		{
+			obj = obj2;
+		}
+		if (e != null)
+		{
+			await e.DisposeAsync();
+		}
+		object obj3 = obj;
+		if (obj3 != null)
+		{
+			ExceptionDispatchInfo.Capture((obj3 as Exception) ?? throw obj3).Throw();
+		}
+		if (num != 1)
+		{
+		}
+	}
 
-			Any of the following could cause this:
-				* Il2CppInterop assemblies
-				* Deobfuscated assemblies
-				* Older assemblies (compared to when the bundle was built)
-				* Newer assemblies (compared to when the bundle was built)
+	public static async UniTaskVoid SubscribeCore<TSource>(IUniTaskAsyncEnumerable<TSource> source, Func<TSource, CancellationToken, UniTaskVoid> onNext, Action<Exception> onError, Action onCompleted, CancellationToken cancellationToken)
+	{
+		IUniTaskAsyncEnumerator<TSource> e = source.GetAsyncEnumerator(cancellationToken);
+		object obj = null;
+		int num = 0;
+		try
+		{
+			try
+			{
+				while (await e.MoveNextAsync())
+				{
+					try
+					{
+						onNext(e.Current, cancellationToken).Forget();
+					}
+					catch (Exception ex)
+					{
+						UniTaskScheduler.PublishUnobservedTaskException(ex);
+					}
+				}
+				onCompleted();
+			}
+			catch (Exception ex2)
+			{
+				if (onError == NopError)
+				{
+					UniTaskScheduler.PublishUnobservedTaskException(ex2);
+					goto IL_011b;
+				}
+				if (ex2 is OperationCanceledException)
+				{
+					goto IL_011b;
+				}
+				onError(ex2);
+			}
+			goto end_IL_0037;
+			IL_011b:
+			num = 1;
+			end_IL_0037:;
+		}
+		catch (object obj2)
+		{
+			obj = obj2;
+		}
+		if (e != null)
+		{
+			await e.DisposeAsync();
+		}
+		object obj3 = obj;
+		if (obj3 != null)
+		{
+			ExceptionDispatchInfo.Capture((obj3 as Exception) ?? throw obj3).Throw();
+		}
+		if (num != 1)
+		{
+		}
+	}
 
-			Note: Although assembly publicizing is bad, it alone cannot cause empty scripts. See: https://github.com/AssetRipper/AssetRipper/issues/653
+	public static async UniTaskVoid SubscribeCore<TSource>(IUniTaskAsyncEnumerable<TSource> source, IObserver<TSource> observer, CancellationToken cancellationToken)
+	{
+		IUniTaskAsyncEnumerator<TSource> e = source.GetAsyncEnumerator(cancellationToken);
+		object obj = null;
+		int num = 0;
+		try
+		{
+			try
+			{
+				while (await e.MoveNextAsync())
+				{
+					try
+					{
+						observer.OnNext(e.Current);
+					}
+					catch (Exception ex)
+					{
+						UniTaskScheduler.PublishUnobservedTaskException(ex);
+					}
+				}
+				observer.OnCompleted();
+			}
+			catch (Exception ex2)
+			{
+				if (ex2 is OperationCanceledException)
+				{
+					goto IL_00ef;
+				}
+				observer.OnError(ex2);
+			}
+			goto end_IL_0037;
+			IL_00ef:
+			num = 1;
+			end_IL_0037:;
+		}
+		catch (object obj2)
+		{
+			obj = obj2;
+		}
+		if (e != null)
+		{
+			await e.DisposeAsync();
+		}
+		object obj3 = obj;
+		if (obj3 != null)
+		{
+			ExceptionDispatchInfo.Capture((obj3 as Exception) ?? throw obj3).Throw();
+		}
+		if (num != 1)
+		{
+		}
+	}
 
-		3. Assembly Reconstruction has not been implemented.
+	public static async UniTaskVoid SubscribeAwaitCore<TSource>(IUniTaskAsyncEnumerable<TSource> source, Func<TSource, UniTask> onNext, Action<Exception> onError, Action onCompleted, CancellationToken cancellationToken)
+	{
+		IUniTaskAsyncEnumerator<TSource> e = source.GetAsyncEnumerator(cancellationToken);
+		object obj = null;
+		int num = 0;
+		try
+		{
+			_ = 1;
+			try
+			{
+				while (await e.MoveNextAsync())
+				{
+					try
+					{
+						await onNext(e.Current);
+					}
+					catch (Exception ex)
+					{
+						UniTaskScheduler.PublishUnobservedTaskException(ex);
+					}
+				}
+				onCompleted();
+			}
+			catch (Exception ex2)
+			{
+				if (onError == NopError)
+				{
+					UniTaskScheduler.PublishUnobservedTaskException(ex2);
+					goto IL_0173;
+				}
+				if (ex2 is OperationCanceledException)
+				{
+					goto IL_0173;
+				}
+				onError(ex2);
+			}
+			goto end_IL_0038;
+			IL_0173:
+			num = 1;
+			end_IL_0038:;
+		}
+		catch (object obj2)
+		{
+			obj = obj2;
+		}
+		if (e != null)
+		{
+			await e.DisposeAsync();
+		}
+		object obj3 = obj;
+		if (obj3 != null)
+		{
+			ExceptionDispatchInfo.Capture((obj3 as Exception) ?? throw obj3).Throw();
+		}
+		if (num != 1)
+		{
+		}
+	}
 
-			Asset bundles contain a small amount of information about the script content.
-			This information can be used to recover the serializable fields of a script.
-
-			See: https://github.com/AssetRipper/AssetRipper/issues/655
-	
-		4. This script is unnecessary.
-
-			If this script has no asset or script references, it can be deleted.
-			Be sure to resolve any compile errors before deleting because they can hide references.
-
-		5. Script Content Level 0
-
-			AssetRipper was set to not load any script information.
-
-		6. Cpp2IL failed to decompile Il2Cpp data
-
-			If this happened, there will be errors in the AssetRipper.log indicating that it happened.
-			This is an upstream problem, and the AssetRipper developer has very little control over it.
-			Please post a GitHub issue at: https://github.com/SamboyCoding/Cpp2IL/issues
-
-		7. An incorrect path was provided to AssetRipper.
-
-			This is characterized by "Mixed game structure has been found at" in the AssetRipper.log file.
-			AssetRipper expects games to conform to a normal file structure for Unity games of that platform.
-			An unexpected file structure could cause AssetRipper to not find the required files for script decompilation.
-			Generally, AssetRipper expects users to provide the root folder of the game. For example:
-				* Windows: the folder containing the game's .exe file
-				* Mac: the .app file/folder
-				* Linux: the folder containing the game's executable file
-				* Android: the apk file
-				* iOS: the ipa file
-				* Switch: the folder containing exefs and romfs
-
-		*/
+	public static async UniTaskVoid SubscribeAwaitCore<TSource>(IUniTaskAsyncEnumerable<TSource> source, Func<TSource, CancellationToken, UniTask> onNext, Action<Exception> onError, Action onCompleted, CancellationToken cancellationToken)
+	{
+		IUniTaskAsyncEnumerator<TSource> e = source.GetAsyncEnumerator(cancellationToken);
+		object obj = null;
+		int num = 0;
+		try
+		{
+			_ = 1;
+			try
+			{
+				while (await e.MoveNextAsync())
+				{
+					try
+					{
+						await onNext(e.Current, cancellationToken);
+					}
+					catch (Exception ex)
+					{
+						UniTaskScheduler.PublishUnobservedTaskException(ex);
+					}
+				}
+				onCompleted();
+			}
+			catch (Exception ex2)
+			{
+				if (onError == NopError)
+				{
+					UniTaskScheduler.PublishUnobservedTaskException(ex2);
+					goto IL_017c;
+				}
+				if (ex2 is OperationCanceledException)
+				{
+					goto IL_017c;
+				}
+				onError(ex2);
+			}
+			goto end_IL_0038;
+			IL_017c:
+			num = 1;
+			end_IL_0038:;
+		}
+		catch (object obj2)
+		{
+			obj = obj2;
+		}
+		if (e != null)
+		{
+			await e.DisposeAsync();
+		}
+		object obj3 = obj;
+		if (obj3 != null)
+		{
+			ExceptionDispatchInfo.Capture((obj3 as Exception) ?? throw obj3).Throw();
+		}
+		if (num != 1)
+		{
+		}
 	}
 }

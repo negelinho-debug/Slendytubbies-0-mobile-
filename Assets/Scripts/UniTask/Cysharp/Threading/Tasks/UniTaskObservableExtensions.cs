@@ -1,66 +1,286 @@
-using UnityEngine;
+using System;
+using System.Threading;
+using Cysharp.Threading.Tasks.Internal;
 
-namespace Cysharp.Threading.Tasks
+namespace Cysharp.Threading.Tasks;
+
+public static class UniTaskObservableExtensions
 {
-	public class UniTaskObservableExtensions : MonoBehaviour
+	private class ToUniTaskObserver<T> : IObserver<T>
 	{
-		/*
-		Dummy class. This could have happened for several reasons:
+		private static readonly Action<object> callback = OnCanceled;
 
-		1. No dll files were provided to AssetRipper.
+		private readonly UniTaskCompletionSource<T> promise;
 
-			Unity asset bundles and serialized files do not contain script information to decompile.
-				* For Mono games, that information is contained in .NET dll files.
-				* For Il2Cpp games, that information is contained in compiled C++ assemblies and the global metadata.
-				
-			AssetRipper usually expects games to conform to a normal file structure for Unity games of that platform.
-			A unexpected file structure could cause AssetRipper to not find the required files.
+		private readonly SingleAssignmentDisposable disposable;
 
-		2. Incorrect dll files were provided to AssetRipper.
+		private readonly CancellationToken cancellationToken;
 
-			Any of the following could cause this:
-				* Il2CppInterop assemblies
-				* Deobfuscated assemblies
-				* Older assemblies (compared to when the bundle was built)
-				* Newer assemblies (compared to when the bundle was built)
+		private readonly CancellationTokenRegistration registration;
 
-			Note: Although assembly publicizing is bad, it alone cannot cause empty scripts. See: https://github.com/AssetRipper/AssetRipper/issues/653
+		private bool hasValue;
 
-		3. Assembly Reconstruction has not been implemented.
+		private T latestValue;
 
-			Asset bundles contain a small amount of information about the script content.
-			This information can be used to recover the serializable fields of a script.
+		public ToUniTaskObserver(UniTaskCompletionSource<T> promise, SingleAssignmentDisposable disposable, CancellationToken cancellationToken)
+		{
+			this.promise = promise;
+			this.disposable = disposable;
+			this.cancellationToken = cancellationToken;
+			if (this.cancellationToken.CanBeCanceled)
+			{
+				registration = this.cancellationToken.RegisterWithoutCaptureExecutionContext(callback, this);
+			}
+		}
 
-			See: https://github.com/AssetRipper/AssetRipper/issues/655
-	
-		4. This script is unnecessary.
+		private static void OnCanceled(object state)
+		{
+			ToUniTaskObserver<T> toUniTaskObserver = (ToUniTaskObserver<T>)state;
+			toUniTaskObserver.disposable.Dispose();
+			toUniTaskObserver.promise.TrySetCanceled(toUniTaskObserver.cancellationToken);
+		}
 
-			If this script has no asset or script references, it can be deleted.
-			Be sure to resolve any compile errors before deleting because they can hide references.
+		public void OnNext(T value)
+		{
+			hasValue = true;
+			latestValue = value;
+		}
 
-		5. Script Content Level 0
+		public void OnError(Exception error)
+		{
+			try
+			{
+				promise.TrySetException(error);
+			}
+			finally
+			{
+				registration.Dispose();
+				disposable.Dispose();
+			}
+		}
 
-			AssetRipper was set to not load any script information.
+		public void OnCompleted()
+		{
+			try
+			{
+				if (hasValue)
+				{
+					promise.TrySetResult(latestValue);
+				}
+				else
+				{
+					promise.TrySetException(new InvalidOperationException("Sequence has no elements"));
+				}
+			}
+			finally
+			{
+				registration.Dispose();
+				disposable.Dispose();
+			}
+		}
+	}
 
-		6. Cpp2IL failed to decompile Il2Cpp data
+	private class FirstValueToUniTaskObserver<T> : IObserver<T>
+	{
+		private static readonly Action<object> callback = OnCanceled;
 
-			If this happened, there will be errors in the AssetRipper.log indicating that it happened.
-			This is an upstream problem, and the AssetRipper developer has very little control over it.
-			Please post a GitHub issue at: https://github.com/SamboyCoding/Cpp2IL/issues
+		private readonly UniTaskCompletionSource<T> promise;
 
-		7. An incorrect path was provided to AssetRipper.
+		private readonly SingleAssignmentDisposable disposable;
 
-			This is characterized by "Mixed game structure has been found at" in the AssetRipper.log file.
-			AssetRipper expects games to conform to a normal file structure for Unity games of that platform.
-			An unexpected file structure could cause AssetRipper to not find the required files for script decompilation.
-			Generally, AssetRipper expects users to provide the root folder of the game. For example:
-				* Windows: the folder containing the game's .exe file
-				* Mac: the .app file/folder
-				* Linux: the folder containing the game's executable file
-				* Android: the apk file
-				* iOS: the ipa file
-				* Switch: the folder containing exefs and romfs
+		private readonly CancellationToken cancellationToken;
 
-		*/
+		private readonly CancellationTokenRegistration registration;
+
+		private bool hasValue;
+
+		public FirstValueToUniTaskObserver(UniTaskCompletionSource<T> promise, SingleAssignmentDisposable disposable, CancellationToken cancellationToken)
+		{
+			this.promise = promise;
+			this.disposable = disposable;
+			this.cancellationToken = cancellationToken;
+			if (this.cancellationToken.CanBeCanceled)
+			{
+				registration = this.cancellationToken.RegisterWithoutCaptureExecutionContext(callback, this);
+			}
+		}
+
+		private static void OnCanceled(object state)
+		{
+			FirstValueToUniTaskObserver<T> firstValueToUniTaskObserver = (FirstValueToUniTaskObserver<T>)state;
+			firstValueToUniTaskObserver.disposable.Dispose();
+			firstValueToUniTaskObserver.promise.TrySetCanceled(firstValueToUniTaskObserver.cancellationToken);
+		}
+
+		public void OnNext(T value)
+		{
+			hasValue = true;
+			try
+			{
+				promise.TrySetResult(value);
+			}
+			finally
+			{
+				registration.Dispose();
+				disposable.Dispose();
+			}
+		}
+
+		public void OnError(Exception error)
+		{
+			try
+			{
+				promise.TrySetException(error);
+			}
+			finally
+			{
+				registration.Dispose();
+				disposable.Dispose();
+			}
+		}
+
+		public void OnCompleted()
+		{
+			try
+			{
+				if (!hasValue)
+				{
+					promise.TrySetException(new InvalidOperationException("Sequence has no elements"));
+				}
+			}
+			finally
+			{
+				registration.Dispose();
+				disposable.Dispose();
+			}
+		}
+	}
+
+	private class ReturnObservable<T> : IObservable<T>
+	{
+		private readonly T value;
+
+		public ReturnObservable(T value)
+		{
+			this.value = value;
+		}
+
+		public IDisposable Subscribe(IObserver<T> observer)
+		{
+			observer.OnNext(value);
+			observer.OnCompleted();
+			return EmptyDisposable.Instance;
+		}
+	}
+
+	private class ThrowObservable<T> : IObservable<T>
+	{
+		private readonly Exception value;
+
+		public ThrowObservable(Exception value)
+		{
+			this.value = value;
+		}
+
+		public IDisposable Subscribe(IObserver<T> observer)
+		{
+			observer.OnError(value);
+			return EmptyDisposable.Instance;
+		}
+	}
+
+	public static UniTask<T> ToUniTask<T>(this IObservable<T> source, bool useFirstValue = false, CancellationToken cancellationToken = default(CancellationToken))
+	{
+		UniTaskCompletionSource<T> uniTaskCompletionSource = new UniTaskCompletionSource<T>();
+		SingleAssignmentDisposable singleAssignmentDisposable = new SingleAssignmentDisposable();
+		IObserver<T> observer2;
+		if (!useFirstValue)
+		{
+			IObserver<T> observer = new ToUniTaskObserver<T>(uniTaskCompletionSource, singleAssignmentDisposable, cancellationToken);
+			observer2 = observer;
+		}
+		else
+		{
+			IObserver<T> observer = new FirstValueToUniTaskObserver<T>(uniTaskCompletionSource, singleAssignmentDisposable, cancellationToken);
+			observer2 = observer;
+		}
+		IObserver<T> observer3 = observer2;
+		try
+		{
+			singleAssignmentDisposable.Disposable = source.Subscribe(observer3);
+		}
+		catch (Exception exception)
+		{
+			uniTaskCompletionSource.TrySetException(exception);
+		}
+		return uniTaskCompletionSource.Task;
+	}
+
+	public static IObservable<T> ToObservable<T>(this UniTask<T> task)
+	{
+		if (task.Status.IsCompleted())
+		{
+			try
+			{
+				return new ReturnObservable<T>(task.GetAwaiter().GetResult());
+			}
+			catch (Exception value)
+			{
+				return new ThrowObservable<T>(value);
+			}
+		}
+		AsyncSubject<T> asyncSubject = new AsyncSubject<T>();
+		Fire(asyncSubject, task).Forget();
+		return asyncSubject;
+	}
+
+	public static IObservable<AsyncUnit> ToObservable(this UniTask task)
+	{
+		if (task.Status.IsCompleted())
+		{
+			try
+			{
+				task.GetAwaiter().GetResult();
+				return new ReturnObservable<AsyncUnit>(AsyncUnit.Default);
+			}
+			catch (Exception value)
+			{
+				return new ThrowObservable<AsyncUnit>(value);
+			}
+		}
+		AsyncSubject<AsyncUnit> asyncSubject = new AsyncSubject<AsyncUnit>();
+		Fire(asyncSubject, task).Forget();
+		return asyncSubject;
+	}
+
+	private static async UniTaskVoid Fire<T>(AsyncSubject<T> subject, UniTask<T> task)
+	{
+		T value;
+		try
+		{
+			value = await task;
+		}
+		catch (Exception error)
+		{
+			subject.OnError(error);
+			return;
+		}
+		subject.OnNext(value);
+		subject.OnCompleted();
+	}
+
+	private static async UniTaskVoid Fire(AsyncSubject<AsyncUnit> subject, UniTask task)
+	{
+		try
+		{
+			await task;
+		}
+		catch (Exception error)
+		{
+			subject.OnError(error);
+			return;
+		}
+		subject.OnNext(AsyncUnit.Default);
+		subject.OnCompleted();
 	}
 }

@@ -1,66 +1,154 @@
+using System;
+using System.Threading;
 using UnityEngine;
 
-namespace Cysharp.Threading.Tasks.Linq
+namespace Cysharp.Threading.Tasks.Linq;
+
+internal class Timer : IUniTaskAsyncEnumerable<AsyncUnit>
 {
-	public class Timer : MonoBehaviour
+	private class _Timer : MoveNextSource, IUniTaskAsyncEnumerator<AsyncUnit>, IUniTaskAsyncDisposable, IPlayerLoopItem
 	{
-		/*
-		Dummy class. This could have happened for several reasons:
+		private readonly float dueTime;
 
-		1. No dll files were provided to AssetRipper.
+		private readonly float? period;
 
-			Unity asset bundles and serialized files do not contain script information to decompile.
-				* For Mono games, that information is contained in .NET dll files.
-				* For Il2Cpp games, that information is contained in compiled C++ assemblies and the global metadata.
-				
-			AssetRipper usually expects games to conform to a normal file structure for Unity games of that platform.
-			A unexpected file structure could cause AssetRipper to not find the required files.
+		private readonly PlayerLoopTiming updateTiming;
 
-		2. Incorrect dll files were provided to AssetRipper.
+		private readonly bool ignoreTimeScale;
 
-			Any of the following could cause this:
-				* Il2CppInterop assemblies
-				* Deobfuscated assemblies
-				* Older assemblies (compared to when the bundle was built)
-				* Newer assemblies (compared to when the bundle was built)
+		private readonly CancellationToken cancellationToken;
 
-			Note: Although assembly publicizing is bad, it alone cannot cause empty scripts. See: https://github.com/AssetRipper/AssetRipper/issues/653
+		private readonly CancellationTokenRegistration cancellationTokenRegistration;
 
-		3. Assembly Reconstruction has not been implemented.
+		private int initialFrame;
 
-			Asset bundles contain a small amount of information about the script content.
-			This information can be used to recover the serializable fields of a script.
+		private float elapsed;
 
-			See: https://github.com/AssetRipper/AssetRipper/issues/655
-	
-		4. This script is unnecessary.
+		private bool dueTimePhase;
 
-			If this script has no asset or script references, it can be deleted.
-			Be sure to resolve any compile errors before deleting because they can hide references.
+		private bool completed;
 
-		5. Script Content Level 0
+		private bool disposed;
 
-			AssetRipper was set to not load any script information.
+		public AsyncUnit Current => default(AsyncUnit);
 
-		6. Cpp2IL failed to decompile Il2Cpp data
+		public _Timer(TimeSpan dueTime, TimeSpan? period, PlayerLoopTiming updateTiming, bool ignoreTimeScale, CancellationToken cancellationToken, bool cancelImmediately)
+		{
+			this.dueTime = (float)dueTime.TotalSeconds;
+			this.period = ((!period.HasValue) ? ((float?)null) : new float?((float)period.Value.TotalSeconds));
+			if (this.dueTime <= 0f)
+			{
+				this.dueTime = 0f;
+			}
+			if (this.period.HasValue && this.period <= 0f)
+			{
+				this.period = 1f;
+			}
+			initialFrame = (PlayerLoopHelper.IsMainThread ? Time.frameCount : (-1));
+			dueTimePhase = true;
+			this.updateTiming = updateTiming;
+			this.ignoreTimeScale = ignoreTimeScale;
+			this.cancellationToken = cancellationToken;
+			if (cancelImmediately && cancellationToken.CanBeCanceled)
+			{
+				cancellationTokenRegistration = cancellationToken.RegisterWithoutCaptureExecutionContext(delegate(object state)
+				{
+					_Timer timer = (_Timer)state;
+					timer.completionSource.TrySetCanceled(timer.cancellationToken);
+				}, this);
+			}
+			PlayerLoopHelper.AddAction(updateTiming, this);
+		}
 
-			If this happened, there will be errors in the AssetRipper.log indicating that it happened.
-			This is an upstream problem, and the AssetRipper developer has very little control over it.
-			Please post a GitHub issue at: https://github.com/SamboyCoding/Cpp2IL/issues
+		public UniTask<bool> MoveNextAsync()
+		{
+			if (disposed || completed)
+			{
+				return CompletedTasks.False;
+			}
+			elapsed = 0f;
+			completionSource.Reset();
+			if (cancellationToken.IsCancellationRequested)
+			{
+				completionSource.TrySetCanceled(cancellationToken);
+			}
+			return new UniTask<bool>(this, completionSource.Version);
+		}
 
-		7. An incorrect path was provided to AssetRipper.
+		public UniTask DisposeAsync()
+		{
+			if (!disposed)
+			{
+				cancellationTokenRegistration.Dispose();
+				disposed = true;
+			}
+			return default(UniTask);
+		}
 
-			This is characterized by "Mixed game structure has been found at" in the AssetRipper.log file.
-			AssetRipper expects games to conform to a normal file structure for Unity games of that platform.
-			An unexpected file structure could cause AssetRipper to not find the required files for script decompilation.
-			Generally, AssetRipper expects users to provide the root folder of the game. For example:
-				* Windows: the folder containing the game's .exe file
-				* Mac: the .app file/folder
-				* Linux: the folder containing the game's executable file
-				* Android: the apk file
-				* iOS: the ipa file
-				* Switch: the folder containing exefs and romfs
+		public bool MoveNext()
+		{
+			if (disposed)
+			{
+				completionSource.TrySetResult(result: false);
+				return false;
+			}
+			if (cancellationToken.IsCancellationRequested)
+			{
+				completionSource.TrySetCanceled(cancellationToken);
+				return false;
+			}
+			if (dueTimePhase)
+			{
+				if (elapsed == 0f && initialFrame == Time.frameCount)
+				{
+					return true;
+				}
+				elapsed += (ignoreTimeScale ? Time.unscaledDeltaTime : Time.deltaTime);
+				if (elapsed >= dueTime)
+				{
+					dueTimePhase = false;
+					completionSource.TrySetResult(result: true);
+				}
+			}
+			else
+			{
+				if (!period.HasValue)
+				{
+					completed = true;
+					completionSource.TrySetResult(result: false);
+					return false;
+				}
+				elapsed += (ignoreTimeScale ? Time.unscaledDeltaTime : Time.deltaTime);
+				if (elapsed >= period)
+				{
+					completionSource.TrySetResult(result: true);
+				}
+			}
+			return true;
+		}
+	}
 
-		*/
+	private readonly PlayerLoopTiming updateTiming;
+
+	private readonly TimeSpan dueTime;
+
+	private readonly TimeSpan? period;
+
+	private readonly bool ignoreTimeScale;
+
+	private readonly bool cancelImmediately;
+
+	public Timer(TimeSpan dueTime, TimeSpan? period, PlayerLoopTiming updateTiming, bool ignoreTimeScale, bool cancelImmediately)
+	{
+		this.updateTiming = updateTiming;
+		this.dueTime = dueTime;
+		this.period = period;
+		this.ignoreTimeScale = ignoreTimeScale;
+		this.cancelImmediately = cancelImmediately;
+	}
+
+	public IUniTaskAsyncEnumerator<AsyncUnit> GetAsyncEnumerator(CancellationToken cancellationToken = default(CancellationToken))
+	{
+		return new _Timer(dueTime, period, updateTiming, ignoreTimeScale, cancellationToken, cancelImmediately);
 	}
 }

@@ -1,66 +1,360 @@
+using System;
+using System.Threading;
+using System.Threading.Tasks.Sources;
+using Cysharp.Threading.Tasks.Internal;
 using UnityEngine;
 
-namespace Cysharp.Threading.Tasks
+namespace Cysharp.Threading.Tasks;
+
+public static class AsyncInstantiateOperationExtensions
 {
-	public class AsyncInstantiateOperationExtensions : MonoBehaviour
+	private sealed class AsyncInstantiateOperationConfiguredSource : IUniTaskSource<UnityEngine.Object[]>, IUniTaskSource, IValueTaskSource, IValueTaskSource<UnityEngine.Object[]>, IPlayerLoopItem, ITaskPoolNode<AsyncInstantiateOperationConfiguredSource>
 	{
-		/*
-		Dummy class. This could have happened for several reasons:
+		private static TaskPool<AsyncInstantiateOperationConfiguredSource> pool;
 
-		1. No dll files were provided to AssetRipper.
+		private AsyncInstantiateOperationConfiguredSource nextNode;
 
-			Unity asset bundles and serialized files do not contain script information to decompile.
-				* For Mono games, that information is contained in .NET dll files.
-				* For Il2Cpp games, that information is contained in compiled C++ assemblies and the global metadata.
-				
-			AssetRipper usually expects games to conform to a normal file structure for Unity games of that platform.
-			A unexpected file structure could cause AssetRipper to not find the required files.
+		private AsyncInstantiateOperation asyncOperation;
 
-		2. Incorrect dll files were provided to AssetRipper.
+		private IProgress<float> progress;
 
-			Any of the following could cause this:
-				* Il2CppInterop assemblies
-				* Deobfuscated assemblies
-				* Older assemblies (compared to when the bundle was built)
-				* Newer assemblies (compared to when the bundle was built)
+		private CancellationToken cancellationToken;
 
-			Note: Although assembly publicizing is bad, it alone cannot cause empty scripts. See: https://github.com/AssetRipper/AssetRipper/issues/653
+		private CancellationTokenRegistration cancellationTokenRegistration;
 
-		3. Assembly Reconstruction has not been implemented.
+		private bool cancelImmediately;
 
-			Asset bundles contain a small amount of information about the script content.
-			This information can be used to recover the serializable fields of a script.
+		private bool completed;
 
-			See: https://github.com/AssetRipper/AssetRipper/issues/655
-	
-		4. This script is unnecessary.
+		private UniTaskCompletionSourceCore<UnityEngine.Object[]> core;
 
-			If this script has no asset or script references, it can be deleted.
-			Be sure to resolve any compile errors before deleting because they can hide references.
+		private Action<AsyncOperation> continuationAction;
 
-		5. Script Content Level 0
+		public ref AsyncInstantiateOperationConfiguredSource NextNode => ref nextNode;
 
-			AssetRipper was set to not load any script information.
+		static AsyncInstantiateOperationConfiguredSource()
+		{
+			TaskPool.RegisterSizeGetter(typeof(AsyncInstantiateOperationConfiguredSource), () => pool.Size);
+		}
 
-		6. Cpp2IL failed to decompile Il2Cpp data
+		private AsyncInstantiateOperationConfiguredSource()
+		{
+			continuationAction = Continuation;
+		}
 
-			If this happened, there will be errors in the AssetRipper.log indicating that it happened.
-			This is an upstream problem, and the AssetRipper developer has very little control over it.
-			Please post a GitHub issue at: https://github.com/SamboyCoding/Cpp2IL/issues
+		public static IUniTaskSource<UnityEngine.Object[]> Create(AsyncInstantiateOperation asyncOperation, PlayerLoopTiming timing, IProgress<float> progress, CancellationToken cancellationToken, bool cancelImmediately, out short token)
+		{
+			if (cancellationToken.IsCancellationRequested)
+			{
+				return AutoResetUniTaskCompletionSource<UnityEngine.Object[]>.CreateFromCanceled(cancellationToken, out token);
+			}
+			if (!pool.TryPop(out var result))
+			{
+				result = new AsyncInstantiateOperationConfiguredSource();
+			}
+			result.asyncOperation = asyncOperation;
+			result.progress = progress;
+			result.cancellationToken = cancellationToken;
+			result.cancelImmediately = cancelImmediately;
+			result.completed = false;
+			asyncOperation.completed += result.continuationAction;
+			if (cancelImmediately && cancellationToken.CanBeCanceled)
+			{
+				result.cancellationTokenRegistration = cancellationToken.RegisterWithoutCaptureExecutionContext(delegate(object state)
+				{
+					AsyncInstantiateOperationConfiguredSource asyncInstantiateOperationConfiguredSource = (AsyncInstantiateOperationConfiguredSource)state;
+					asyncInstantiateOperationConfiguredSource.core.TrySetCanceled(asyncInstantiateOperationConfiguredSource.cancellationToken);
+				}, result);
+			}
+			PlayerLoopHelper.AddAction(timing, result);
+			token = result.core.Version;
+			return result;
+		}
 
-		7. An incorrect path was provided to AssetRipper.
+		public UnityEngine.Object[] GetResult(short token)
+		{
+			try
+			{
+				return core.GetResult(token);
+			}
+			finally
+			{
+				if (!cancelImmediately || !cancellationToken.IsCancellationRequested)
+				{
+					TryReturn();
+				}
+			}
+		}
 
-			This is characterized by "Mixed game structure has been found at" in the AssetRipper.log file.
-			AssetRipper expects games to conform to a normal file structure for Unity games of that platform.
-			An unexpected file structure could cause AssetRipper to not find the required files for script decompilation.
-			Generally, AssetRipper expects users to provide the root folder of the game. For example:
-				* Windows: the folder containing the game's .exe file
-				* Mac: the .app file/folder
-				* Linux: the folder containing the game's executable file
-				* Android: the apk file
-				* iOS: the ipa file
-				* Switch: the folder containing exefs and romfs
+		void IUniTaskSource.GetResult(short token)
+		{
+			GetResult(token);
+		}
 
-		*/
+		public UniTaskStatus GetStatus(short token)
+		{
+			return core.GetStatus(token);
+		}
+
+		public UniTaskStatus UnsafeGetStatus()
+		{
+			return core.UnsafeGetStatus();
+		}
+
+		public void OnCompleted(Action<object> continuation, object state, short token)
+		{
+			core.OnCompleted(continuation, state, token);
+		}
+
+		public bool MoveNext()
+		{
+			if (completed || asyncOperation == null)
+			{
+				return false;
+			}
+			if (cancellationToken.IsCancellationRequested)
+			{
+				core.TrySetCanceled(cancellationToken);
+				return false;
+			}
+			if (progress != null)
+			{
+				progress.Report(asyncOperation.progress);
+			}
+			if (asyncOperation.isDone)
+			{
+				core.TrySetResult(asyncOperation.Result);
+				return false;
+			}
+			return true;
+		}
+
+		private bool TryReturn()
+		{
+			core.Reset();
+			asyncOperation.completed -= continuationAction;
+			asyncOperation = null;
+			progress = null;
+			cancellationToken = default(CancellationToken);
+			cancellationTokenRegistration.Dispose();
+			cancelImmediately = false;
+			return pool.TryPush(this);
+		}
+
+		private void Continuation(AsyncOperation _)
+		{
+			if (!completed)
+			{
+				completed = true;
+				if (cancellationToken.IsCancellationRequested)
+				{
+					core.TrySetCanceled(cancellationToken);
+				}
+				else
+				{
+					core.TrySetResult(asyncOperation.Result);
+				}
+			}
+		}
+	}
+
+	private sealed class AsyncInstantiateOperationConfiguredSource<T> : IUniTaskSource<T[]>, IUniTaskSource, IValueTaskSource, IValueTaskSource<T[]>, IPlayerLoopItem, ITaskPoolNode<AsyncInstantiateOperationConfiguredSource<T>> where T : UnityEngine.Object
+	{
+		private static TaskPool<AsyncInstantiateOperationConfiguredSource<T>> pool;
+
+		private AsyncInstantiateOperationConfiguredSource<T> nextNode;
+
+		private AsyncInstantiateOperation<T> asyncOperation;
+
+		private IProgress<float> progress;
+
+		private CancellationToken cancellationToken;
+
+		private CancellationTokenRegistration cancellationTokenRegistration;
+
+		private bool cancelImmediately;
+
+		private bool completed;
+
+		private UniTaskCompletionSourceCore<T[]> core;
+
+		private Action<AsyncOperation> continuationAction;
+
+		public ref AsyncInstantiateOperationConfiguredSource<T> NextNode => ref nextNode;
+
+		static AsyncInstantiateOperationConfiguredSource()
+		{
+			TaskPool.RegisterSizeGetter(typeof(AsyncInstantiateOperationConfiguredSource<T>), () => pool.Size);
+		}
+
+		private AsyncInstantiateOperationConfiguredSource()
+		{
+			continuationAction = Continuation;
+		}
+
+		public static IUniTaskSource<T[]> Create(AsyncInstantiateOperation<T> asyncOperation, PlayerLoopTiming timing, IProgress<float> progress, CancellationToken cancellationToken, bool cancelImmediately, out short token)
+		{
+			if (cancellationToken.IsCancellationRequested)
+			{
+				return AutoResetUniTaskCompletionSource<T[]>.CreateFromCanceled(cancellationToken, out token);
+			}
+			if (!pool.TryPop(out var result))
+			{
+				result = new AsyncInstantiateOperationConfiguredSource<T>();
+			}
+			result.asyncOperation = asyncOperation;
+			result.progress = progress;
+			result.cancellationToken = cancellationToken;
+			result.cancelImmediately = cancelImmediately;
+			result.completed = false;
+			asyncOperation.completed += result.continuationAction;
+			if (cancelImmediately && cancellationToken.CanBeCanceled)
+			{
+				result.cancellationTokenRegistration = cancellationToken.RegisterWithoutCaptureExecutionContext(delegate(object state)
+				{
+					AsyncInstantiateOperationConfiguredSource<T> asyncInstantiateOperationConfiguredSource = (AsyncInstantiateOperationConfiguredSource<T>)state;
+					asyncInstantiateOperationConfiguredSource.core.TrySetCanceled(asyncInstantiateOperationConfiguredSource.cancellationToken);
+				}, result);
+			}
+			PlayerLoopHelper.AddAction(timing, result);
+			token = result.core.Version;
+			return result;
+		}
+
+		public T[] GetResult(short token)
+		{
+			try
+			{
+				return core.GetResult(token);
+			}
+			finally
+			{
+				if (!cancelImmediately || !cancellationToken.IsCancellationRequested)
+				{
+					TryReturn();
+				}
+			}
+		}
+
+		void IUniTaskSource.GetResult(short token)
+		{
+			GetResult(token);
+		}
+
+		public UniTaskStatus GetStatus(short token)
+		{
+			return core.GetStatus(token);
+		}
+
+		public UniTaskStatus UnsafeGetStatus()
+		{
+			return core.UnsafeGetStatus();
+		}
+
+		public void OnCompleted(Action<object> continuation, object state, short token)
+		{
+			core.OnCompleted(continuation, state, token);
+		}
+
+		public bool MoveNext()
+		{
+			if (completed || asyncOperation == null)
+			{
+				return false;
+			}
+			if (cancellationToken.IsCancellationRequested)
+			{
+				core.TrySetCanceled(cancellationToken);
+				return false;
+			}
+			if (progress != null)
+			{
+				progress.Report(asyncOperation.progress);
+			}
+			if (asyncOperation.isDone)
+			{
+				core.TrySetResult(asyncOperation.Result);
+				return false;
+			}
+			return true;
+		}
+
+		private bool TryReturn()
+		{
+			core.Reset();
+			asyncOperation.completed -= continuationAction;
+			asyncOperation = null;
+			progress = null;
+			cancellationToken = default(CancellationToken);
+			cancellationTokenRegistration.Dispose();
+			cancelImmediately = false;
+			return pool.TryPush(this);
+		}
+
+		private void Continuation(AsyncOperation _)
+		{
+			if (!completed)
+			{
+				completed = true;
+				if (cancellationToken.IsCancellationRequested)
+				{
+					core.TrySetCanceled(cancellationToken);
+				}
+				else
+				{
+					core.TrySetResult(asyncOperation.Result);
+				}
+			}
+		}
+	}
+
+	public static UniTask<UnityEngine.Object[]> WithCancellation<T>(this AsyncInstantiateOperation asyncOperation, CancellationToken cancellationToken)
+	{
+		return asyncOperation.ToUniTask(null, PlayerLoopTiming.Update, cancellationToken);
+	}
+
+	public static UniTask<UnityEngine.Object[]> WithCancellation<T>(this AsyncInstantiateOperation asyncOperation, CancellationToken cancellationToken, bool cancelImmediately)
+	{
+		return asyncOperation.ToUniTask(null, PlayerLoopTiming.Update, cancellationToken, cancelImmediately);
+	}
+
+	public static UniTask<UnityEngine.Object[]> ToUniTask(this AsyncInstantiateOperation asyncOperation, IProgress<float> progress = null, PlayerLoopTiming timing = PlayerLoopTiming.Update, CancellationToken cancellationToken = default(CancellationToken), bool cancelImmediately = false)
+	{
+		Error.ThrowArgumentNullException(asyncOperation, "asyncOperation");
+		if (cancellationToken.IsCancellationRequested)
+		{
+			return UniTask.FromCanceled<UnityEngine.Object[]>(cancellationToken);
+		}
+		if (asyncOperation.isDone)
+		{
+			return UniTask.FromResult(asyncOperation.Result);
+		}
+		short token;
+		return new UniTask<UnityEngine.Object[]>(AsyncInstantiateOperationConfiguredSource.Create(asyncOperation, timing, progress, cancellationToken, cancelImmediately, out token), token);
+	}
+
+	public static UniTask<T[]> WithCancellation<T>(this AsyncInstantiateOperation<T> asyncOperation, CancellationToken cancellationToken) where T : UnityEngine.Object
+	{
+		return asyncOperation.ToUniTask(null, PlayerLoopTiming.Update, cancellationToken);
+	}
+
+	public static UniTask<T[]> WithCancellation<T>(this AsyncInstantiateOperation<T> asyncOperation, CancellationToken cancellationToken, bool cancelImmediately) where T : UnityEngine.Object
+	{
+		return asyncOperation.ToUniTask(null, PlayerLoopTiming.Update, cancellationToken, cancelImmediately);
+	}
+
+	public static UniTask<T[]> ToUniTask<T>(this AsyncInstantiateOperation<T> asyncOperation, IProgress<float> progress = null, PlayerLoopTiming timing = PlayerLoopTiming.Update, CancellationToken cancellationToken = default(CancellationToken), bool cancelImmediately = false) where T : UnityEngine.Object
+	{
+		Error.ThrowArgumentNullException(asyncOperation, "asyncOperation");
+		if (cancellationToken.IsCancellationRequested)
+		{
+			return UniTask.FromCanceled<T[]>(cancellationToken);
+		}
+		if (asyncOperation.isDone)
+		{
+			return UniTask.FromResult(asyncOperation.Result);
+		}
+		short token;
+		return new UniTask<T[]>(AsyncInstantiateOperationConfiguredSource<T>.Create(asyncOperation, timing, progress, cancellationToken, cancelImmediately, out token), token);
 	}
 }

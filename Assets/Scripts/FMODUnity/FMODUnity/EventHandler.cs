@@ -1,66 +1,123 @@
 using UnityEngine;
+using UnityEngine.EventSystems;
 
-namespace FMODUnity
+namespace FMODUnity;
+
+public abstract class EventHandler : MonoBehaviour, IPointerEnterHandler, IEventSystemHandler, IPointerExitHandler, IPointerDownHandler, IPointerUpHandler
 {
-	public class EventHandler : MonoBehaviour
+	public string CollisionTag = "";
+
+	protected virtual void Start()
 	{
-		/*
-		Dummy class. This could have happened for several reasons:
-
-		1. No dll files were provided to AssetRipper.
-
-			Unity asset bundles and serialized files do not contain script information to decompile.
-				* For Mono games, that information is contained in .NET dll files.
-				* For Il2Cpp games, that information is contained in compiled C++ assemblies and the global metadata.
-				
-			AssetRipper usually expects games to conform to a normal file structure for Unity games of that platform.
-			A unexpected file structure could cause AssetRipper to not find the required files.
-
-		2. Incorrect dll files were provided to AssetRipper.
-
-			Any of the following could cause this:
-				* Il2CppInterop assemblies
-				* Deobfuscated assemblies
-				* Older assemblies (compared to when the bundle was built)
-				* Newer assemblies (compared to when the bundle was built)
-
-			Note: Although assembly publicizing is bad, it alone cannot cause empty scripts. See: https://github.com/AssetRipper/AssetRipper/issues/653
-
-		3. Assembly Reconstruction has not been implemented.
-
-			Asset bundles contain a small amount of information about the script content.
-			This information can be used to recover the serializable fields of a script.
-
-			See: https://github.com/AssetRipper/AssetRipper/issues/655
-	
-		4. This script is unnecessary.
-
-			If this script has no asset or script references, it can be deleted.
-			Be sure to resolve any compile errors before deleting because they can hide references.
-
-		5. Script Content Level 0
-
-			AssetRipper was set to not load any script information.
-
-		6. Cpp2IL failed to decompile Il2Cpp data
-
-			If this happened, there will be errors in the AssetRipper.log indicating that it happened.
-			This is an upstream problem, and the AssetRipper developer has very little control over it.
-			Please post a GitHub issue at: https://github.com/SamboyCoding/Cpp2IL/issues
-
-		7. An incorrect path was provided to AssetRipper.
-
-			This is characterized by "Mixed game structure has been found at" in the AssetRipper.log file.
-			AssetRipper expects games to conform to a normal file structure for Unity games of that platform.
-			An unexpected file structure could cause AssetRipper to not find the required files for script decompilation.
-			Generally, AssetRipper expects users to provide the root folder of the game. For example:
-				* Windows: the folder containing the game's .exe file
-				* Mac: the .app file/folder
-				* Linux: the folder containing the game's executable file
-				* Android: the apk file
-				* iOS: the ipa file
-				* Switch: the folder containing exefs and romfs
-
-		*/
+		HandleGameEvent(EmitterGameEvent.ObjectStart);
 	}
+
+	protected virtual void OnDestroy()
+	{
+		HandleGameEvent(EmitterGameEvent.ObjectDestroy);
+	}
+
+	private void OnEnable()
+	{
+		HandleGameEvent(EmitterGameEvent.ObjectEnable);
+	}
+
+	private void OnDisable()
+	{
+		HandleGameEvent(EmitterGameEvent.ObjectDisable);
+	}
+
+	private void OnTriggerEnter(Collider other)
+	{
+		if (string.IsNullOrEmpty(CollisionTag) || other.CompareTag(CollisionTag) || ((bool)other.attachedRigidbody && other.attachedRigidbody.CompareTag(CollisionTag)))
+		{
+			HandleGameEvent(EmitterGameEvent.TriggerEnter);
+		}
+	}
+
+	private void OnTriggerExit(Collider other)
+	{
+		if (string.IsNullOrEmpty(CollisionTag) || other.CompareTag(CollisionTag) || ((bool)other.attachedRigidbody && other.attachedRigidbody.CompareTag(CollisionTag)))
+		{
+			HandleGameEvent(EmitterGameEvent.TriggerExit);
+		}
+	}
+
+	private void OnTriggerEnter2D(Collider2D other)
+	{
+		if (string.IsNullOrEmpty(CollisionTag) || other.CompareTag(CollisionTag))
+		{
+			HandleGameEvent(EmitterGameEvent.TriggerEnter2D);
+		}
+	}
+
+	private void OnTriggerExit2D(Collider2D other)
+	{
+		if (string.IsNullOrEmpty(CollisionTag) || other.CompareTag(CollisionTag))
+		{
+			HandleGameEvent(EmitterGameEvent.TriggerExit2D);
+		}
+	}
+
+	private void OnCollisionEnter()
+	{
+		HandleGameEvent(EmitterGameEvent.CollisionEnter);
+	}
+
+	private void OnCollisionExit()
+	{
+		HandleGameEvent(EmitterGameEvent.CollisionExit);
+	}
+
+	private void OnCollisionEnter2D()
+	{
+		HandleGameEvent(EmitterGameEvent.CollisionEnter2D);
+	}
+
+	private void OnCollisionExit2D()
+	{
+		HandleGameEvent(EmitterGameEvent.CollisionExit2D);
+	}
+
+	private void OnMouseEnter()
+	{
+		HandleGameEvent(EmitterGameEvent.ObjectMouseEnter);
+	}
+
+	private void OnMouseExit()
+	{
+		HandleGameEvent(EmitterGameEvent.ObjectMouseExit);
+	}
+
+	private void OnMouseDown()
+	{
+		HandleGameEvent(EmitterGameEvent.ObjectMouseDown);
+	}
+
+	private void OnMouseUp()
+	{
+		HandleGameEvent(EmitterGameEvent.ObjectMouseUp);
+	}
+
+	public void OnPointerEnter(PointerEventData eventData)
+	{
+		HandleGameEvent(EmitterGameEvent.UIMouseEnter);
+	}
+
+	public void OnPointerExit(PointerEventData eventData)
+	{
+		HandleGameEvent(EmitterGameEvent.UIMouseExit);
+	}
+
+	public void OnPointerDown(PointerEventData eventData)
+	{
+		HandleGameEvent(EmitterGameEvent.UIMouseDown);
+	}
+
+	public void OnPointerUp(PointerEventData eventData)
+	{
+		HandleGameEvent(EmitterGameEvent.UIMouseUp);
+	}
+
+	protected abstract void HandleGameEvent(EmitterGameEvent gameEvent);
 }

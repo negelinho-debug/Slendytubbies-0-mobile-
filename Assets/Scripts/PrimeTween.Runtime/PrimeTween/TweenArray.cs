@@ -1,66 +1,212 @@
-using UnityEngine;
+using System;
+using Unity.Collections;
+using Unity.Collections.LowLevel.Unsafe;
 
-namespace PrimeTween
+namespace PrimeTween;
+
+internal class TweenArray
 {
-	public class TweenArray : MonoBehaviour
+	internal readonly struct Lock : IDisposable
 	{
-		/*
-		Dummy class. This could have happened for several reasons:
+		private readonly TweenArray array;
 
-		1. No dll files were provided to AssetRipper.
+		internal Lock(TweenArray array)
+		{
+			this.array = array;
+			array.numLocks++;
+		}
 
-			Unity asset bundles and serialized files do not contain script information to decompile.
-				* For Mono games, that information is contained in .NET dll files.
-				* For Il2Cpp games, that information is contained in compiled C++ assemblies and the global metadata.
-				
-			AssetRipper usually expects games to conform to a normal file structure for Unity games of that platform.
-			A unexpected file structure could cause AssetRipper to not find the required files.
+		public void Dispose()
+		{
+			array.numLocks--;
+		}
+	}
 
-		2. Incorrect dll files were provided to AssetRipper.
+	public struct Enumerator : IDisposable
+	{
+		private readonly TweenArray _array;
 
-			Any of the following could cause this:
-				* Il2CppInterop assemblies
-				* Deobfuscated assemblies
-				* Older assemblies (compared to when the bundle was built)
-				* Newer assemblies (compared to when the bundle was built)
+		private int _index;
 
-			Note: Although assembly publicizing is bad, it alone cannot cause empty scripts. See: https://github.com/AssetRipper/AssetRipper/issues/653
+		private readonly Lock _lock;
 
-		3. Assembly Reconstruction has not been implemented.
+		public EnumeratorElement Current => new EnumeratorElement(_array, _index);
 
-			Asset bundles contain a small amount of information about the script content.
-			This information can be used to recover the serializable fields of a script.
+		internal Enumerator(TweenArray array)
+		{
+			_array = array;
+			_index = -1;
+			_lock = new Lock(array);
+		}
 
-			See: https://github.com/AssetRipper/AssetRipper/issues/655
-	
-		4. This script is unnecessary.
+		public bool MoveNext()
+		{
+			_index++;
+			return _index < _array.Count;
+		}
 
-			If this script has no asset or script references, it can be deleted.
-			Be sure to resolve any compile errors before deleting because they can hide references.
+		void IDisposable.Dispose()
+		{
+			_lock.Dispose();
+		}
+	}
 
-		5. Script Content Level 0
+	public struct EnumeratorElement
+	{
+		private readonly TweenArray _array;
 
-			AssetRipper was set to not load any script information.
+		internal readonly int index;
 
-		6. Cpp2IL failed to decompile Il2Cpp data
+		public ref TweenData tween => ref _array[index];
 
-			If this happened, there will be errors in the AssetRipper.log indicating that it happened.
-			This is an upstream problem, and the AssetRipper developer has very little control over it.
-			Please post a GitHub issue at: https://github.com/SamboyCoding/Cpp2IL/issues
+		public ref UnmanagedTweenData data => ref _array.GetDataAt(index);
 
-		7. An incorrect path was provided to AssetRipper.
+		internal EnumeratorElement(TweenArray array, int index)
+		{
+			_array = array;
+			this.index = index;
+		}
+	}
 
-			This is characterized by "Mixed game structure has been found at" in the AssetRipper.log file.
-			AssetRipper expects games to conform to a normal file structure for Unity games of that platform.
-			An unexpected file structure could cause AssetRipper to not find the required files for script decompilation.
-			Generally, AssetRipper expects users to provide the root folder of the game. For example:
-				* Windows: the folder containing the game's .exe file
-				* Mac: the .app file/folder
-				* Linux: the folder containing the game's executable file
-				* Android: the apk file
-				* iOS: the ipa file
-				* Switch: the folder containing exefs and romfs
+	private TweenData[] _tweens;
 
-		*/
+	private NativeArray<UnmanagedTweenData> _data;
+
+	private int _capacity;
+
+	private int numLocks;
+
+	internal readonly string _name;
+
+	internal unsafe UnmanagedTweenData* _dataPtr { get; private set; }
+
+	internal int Count { get; private set; }
+
+	internal bool isLocked => numLocks > 0;
+
+	internal ref TweenData this[int index] => ref _tweens[index];
+
+	public int Capacity
+	{
+		get
+		{
+			return _capacity;
+		}
+		set
+		{
+			if (_capacity == value)
+			{
+				return;
+			}
+			TweenData[] tweens = _tweens;
+			NativeArray<UnmanagedTweenData> data = _data;
+			CreateBuffers(value);
+			Array.Copy(tweens, _tweens, Count);
+			NativeArray<UnmanagedTweenData>.Copy(data, _data, Count);
+			data.Dispose();
+			using Enumerator enumerator = GetEnumerator();
+			while (enumerator.MoveNext())
+			{
+				EnumeratorElement current = enumerator.Current;
+				_ = ref current.tween;
+				_ = ref current.data;
+			}
+		}
+	}
+
+	public TweenArray(int capacity, string name)
+	{
+		CreateBuffers(capacity);
+		_name = name;
+	}
+
+	private unsafe void CreateBuffers(int capacity)
+	{
+		_tweens = new TweenData[capacity];
+		_data = new NativeArray<UnmanagedTweenData>(capacity, Allocator.Persistent);
+		_dataPtr = (UnmanagedTweenData*)_data.GetUnsafePtr();
+		_capacity = capacity;
+	}
+
+	internal void MoveAndClearOld(TweenData tween, int oldIndex, int newIndex)
+	{
+		_data[newIndex] = _data[oldIndex];
+		tween.cold._index = newIndex;
+		this[newIndex] = tween;
+		this[oldIndex] = default(TweenData);
+		_data[oldIndex] = default(UnmanagedTweenData);
+	}
+
+	internal void RemoveLast(ColdData cold)
+	{
+		int index = Count - 1;
+		cold._tweenArray = null;
+		cold._index = -1;
+		this[index] = default(TweenData);
+		_data[index] = default(UnmanagedTweenData);
+		Count--;
+	}
+
+	internal void TrimEndNulls(int numRemoved)
+	{
+		for (int i = Count - numRemoved; i < Count; i++)
+		{
+		}
+		Count -= numRemoved;
+	}
+
+	internal void Clear()
+	{
+		for (int i = 0; i < Count; i++)
+		{
+			this[i] = default(TweenData);
+			_data[i] = default(UnmanagedTweenData);
+		}
+		Count = 0;
+	}
+
+	public void Add(ColdData tween)
+	{
+		int count = Count;
+		if (count == Capacity)
+		{
+			Capacity = ((Capacity == 0) ? 4 : (Capacity * 2));
+		}
+		tween._tweenArray = this;
+		tween._index = count;
+		tween.data.id = tween.id;
+		this[count] = new TweenData
+		{
+			cold = tween
+		};
+		Count++;
+	}
+
+	public void Dispose()
+	{
+		_data.Dispose();
+		_data = default(NativeArray<UnmanagedTweenData>);
+		_capacity = 0;
+		Count = 0;
+	}
+
+	internal ColdData Single()
+	{
+		return this[0].cold;
+	}
+
+	internal NativeArray<UnmanagedTweenData> GetData()
+	{
+		return _data;
+	}
+
+	internal unsafe ref UnmanagedTweenData GetDataAt(int index)
+	{
+		return ref UnsafeUtility.AsRef<UnmanagedTweenData>(_dataPtr + index);
+	}
+
+	public Enumerator GetEnumerator()
+	{
+		return new Enumerator(this);
 	}
 }

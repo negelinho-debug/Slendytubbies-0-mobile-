@@ -1,66 +1,86 @@
-using UnityEngine;
+using System;
+using System.Collections.Generic;
+using Cysharp.Threading.Tasks.Internal;
 
-namespace Cysharp.Threading.Tasks
+namespace Cysharp.Threading.Tasks;
+
+public static class Progress
 {
-	public class Progress : MonoBehaviour
+	private sealed class NullProgress<T> : IProgress<T>
 	{
-		/*
-		Dummy class. This could have happened for several reasons:
+		public static readonly IProgress<T> Instance = new NullProgress<T>();
 
-		1. No dll files were provided to AssetRipper.
+		private NullProgress()
+		{
+		}
 
-			Unity asset bundles and serialized files do not contain script information to decompile.
-				* For Mono games, that information is contained in .NET dll files.
-				* For Il2Cpp games, that information is contained in compiled C++ assemblies and the global metadata.
-				
-			AssetRipper usually expects games to conform to a normal file structure for Unity games of that platform.
-			A unexpected file structure could cause AssetRipper to not find the required files.
+		public void Report(T value)
+		{
+		}
+	}
 
-		2. Incorrect dll files were provided to AssetRipper.
+	private sealed class AnonymousProgress<T> : IProgress<T>
+	{
+		private readonly Action<T> action;
 
-			Any of the following could cause this:
-				* Il2CppInterop assemblies
-				* Deobfuscated assemblies
-				* Older assemblies (compared to when the bundle was built)
-				* Newer assemblies (compared to when the bundle was built)
+		public AnonymousProgress(Action<T> action)
+		{
+			this.action = action;
+		}
 
-			Note: Although assembly publicizing is bad, it alone cannot cause empty scripts. See: https://github.com/AssetRipper/AssetRipper/issues/653
+		public void Report(T value)
+		{
+			action(value);
+		}
+	}
 
-		3. Assembly Reconstruction has not been implemented.
+	private sealed class OnlyValueChangedProgress<T> : IProgress<T>
+	{
+		private readonly Action<T> action;
 
-			Asset bundles contain a small amount of information about the script content.
-			This information can be used to recover the serializable fields of a script.
+		private readonly IEqualityComparer<T> comparer;
 
-			See: https://github.com/AssetRipper/AssetRipper/issues/655
-	
-		4. This script is unnecessary.
+		private bool isFirstCall;
 
-			If this script has no asset or script references, it can be deleted.
-			Be sure to resolve any compile errors before deleting because they can hide references.
+		private T latestValue;
 
-		5. Script Content Level 0
+		public OnlyValueChangedProgress(Action<T> action, IEqualityComparer<T> comparer)
+		{
+			this.action = action;
+			this.comparer = comparer;
+			isFirstCall = true;
+		}
 
-			AssetRipper was set to not load any script information.
+		public void Report(T value)
+		{
+			if (isFirstCall)
+			{
+				isFirstCall = false;
+			}
+			else if (comparer.Equals(value, latestValue))
+			{
+				return;
+			}
+			latestValue = value;
+			action(value);
+		}
+	}
 
-		6. Cpp2IL failed to decompile Il2Cpp data
+	public static IProgress<T> Create<T>(Action<T> handler)
+	{
+		if (handler == null)
+		{
+			return NullProgress<T>.Instance;
+		}
+		return new AnonymousProgress<T>(handler);
+	}
 
-			If this happened, there will be errors in the AssetRipper.log indicating that it happened.
-			This is an upstream problem, and the AssetRipper developer has very little control over it.
-			Please post a GitHub issue at: https://github.com/SamboyCoding/Cpp2IL/issues
-
-		7. An incorrect path was provided to AssetRipper.
-
-			This is characterized by "Mixed game structure has been found at" in the AssetRipper.log file.
-			AssetRipper expects games to conform to a normal file structure for Unity games of that platform.
-			An unexpected file structure could cause AssetRipper to not find the required files for script decompilation.
-			Generally, AssetRipper expects users to provide the root folder of the game. For example:
-				* Windows: the folder containing the game's .exe file
-				* Mac: the .app file/folder
-				* Linux: the folder containing the game's executable file
-				* Android: the apk file
-				* iOS: the ipa file
-				* Switch: the folder containing exefs and romfs
-
-		*/
+	public static IProgress<T> CreateOnlyValueChanged<T>(Action<T> handler, IEqualityComparer<T> comparer = null)
+	{
+		if (handler == null)
+		{
+			return NullProgress<T>.Instance;
+		}
+		return new OnlyValueChangedProgress<T>(handler, comparer ?? UnityEqualityComparer.GetDefault<T>());
 	}
 }

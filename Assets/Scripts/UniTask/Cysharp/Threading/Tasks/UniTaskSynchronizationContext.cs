@@ -1,66 +1,164 @@
+using System;
+using System.Runtime.InteropServices;
+using System.Threading;
 using UnityEngine;
 
-namespace Cysharp.Threading.Tasks
+namespace Cysharp.Threading.Tasks;
+
+public class UniTaskSynchronizationContext : SynchronizationContext
 {
-	public class UniTaskSynchronizationContext : MonoBehaviour
+	[StructLayout(LayoutKind.Auto)]
+	private readonly struct Callback
 	{
-		/*
-		Dummy class. This could have happened for several reasons:
+		private readonly SendOrPostCallback callback;
 
-		1. No dll files were provided to AssetRipper.
+		private readonly object state;
 
-			Unity asset bundles and serialized files do not contain script information to decompile.
-				* For Mono games, that information is contained in .NET dll files.
-				* For Il2Cpp games, that information is contained in compiled C++ assemblies and the global metadata.
-				
-			AssetRipper usually expects games to conform to a normal file structure for Unity games of that platform.
-			A unexpected file structure could cause AssetRipper to not find the required files.
+		public Callback(SendOrPostCallback callback, object state)
+		{
+			this.callback = callback;
+			this.state = state;
+		}
 
-		2. Incorrect dll files were provided to AssetRipper.
+		public void Invoke()
+		{
+			try
+			{
+				callback(state);
+			}
+			catch (Exception exception)
+			{
+				Debug.LogException(exception);
+			}
+		}
+	}
 
-			Any of the following could cause this:
-				* Il2CppInterop assemblies
-				* Deobfuscated assemblies
-				* Older assemblies (compared to when the bundle was built)
-				* Newer assemblies (compared to when the bundle was built)
+	private const int MaxArrayLength = 2146435071;
 
-			Note: Although assembly publicizing is bad, it alone cannot cause empty scripts. See: https://github.com/AssetRipper/AssetRipper/issues/653
+	private const int InitialSize = 16;
 
-		3. Assembly Reconstruction has not been implemented.
+	private static SpinLock gate = new SpinLock(enableThreadOwnerTracking: false);
 
-			Asset bundles contain a small amount of information about the script content.
-			This information can be used to recover the serializable fields of a script.
+	private static bool dequing = false;
 
-			See: https://github.com/AssetRipper/AssetRipper/issues/655
-	
-		4. This script is unnecessary.
+	private static int actionListCount = 0;
 
-			If this script has no asset or script references, it can be deleted.
-			Be sure to resolve any compile errors before deleting because they can hide references.
+	private static Callback[] actionList = new Callback[16];
 
-		5. Script Content Level 0
+	private static int waitingListCount = 0;
 
-			AssetRipper was set to not load any script information.
+	private static Callback[] waitingList = new Callback[16];
 
-		6. Cpp2IL failed to decompile Il2Cpp data
+	private static int opCount;
 
-			If this happened, there will be errors in the AssetRipper.log indicating that it happened.
-			This is an upstream problem, and the AssetRipper developer has very little control over it.
-			Please post a GitHub issue at: https://github.com/SamboyCoding/Cpp2IL/issues
+	public override void Send(SendOrPostCallback d, object state)
+	{
+		d(state);
+	}
 
-		7. An incorrect path was provided to AssetRipper.
+	public override void Post(SendOrPostCallback d, object state)
+	{
+		bool lockTaken = false;
+		try
+		{
+			gate.Enter(ref lockTaken);
+			if (dequing)
+			{
+				if (waitingList.Length == waitingListCount)
+				{
+					int num = waitingListCount * 2;
+					if ((uint)num > 2146435071u)
+					{
+						num = 2146435071;
+					}
+					Callback[] destinationArray = new Callback[num];
+					Array.Copy(waitingList, destinationArray, waitingListCount);
+					waitingList = destinationArray;
+				}
+				waitingList[waitingListCount] = new Callback(d, state);
+				waitingListCount++;
+				return;
+			}
+			if (actionList.Length == actionListCount)
+			{
+				int num2 = actionListCount * 2;
+				if ((uint)num2 > 2146435071u)
+				{
+					num2 = 2146435071;
+				}
+				Callback[] destinationArray2 = new Callback[num2];
+				Array.Copy(actionList, destinationArray2, actionListCount);
+				actionList = destinationArray2;
+			}
+			actionList[actionListCount] = new Callback(d, state);
+			actionListCount++;
+		}
+		finally
+		{
+			if (lockTaken)
+			{
+				gate.Exit(useMemoryBarrier: false);
+			}
+		}
+	}
 
-			This is characterized by "Mixed game structure has been found at" in the AssetRipper.log file.
-			AssetRipper expects games to conform to a normal file structure for Unity games of that platform.
-			An unexpected file structure could cause AssetRipper to not find the required files for script decompilation.
-			Generally, AssetRipper expects users to provide the root folder of the game. For example:
-				* Windows: the folder containing the game's .exe file
-				* Mac: the .app file/folder
-				* Linux: the folder containing the game's executable file
-				* Android: the apk file
-				* iOS: the ipa file
-				* Switch: the folder containing exefs and romfs
+	public override void OperationStarted()
+	{
+		Interlocked.Increment(ref opCount);
+	}
 
-		*/
+	public override void OperationCompleted()
+	{
+		Interlocked.Decrement(ref opCount);
+	}
+
+	public override SynchronizationContext CreateCopy()
+	{
+		return this;
+	}
+
+	internal static void Run()
+	{
+		bool lockTaken = false;
+		try
+		{
+			gate.Enter(ref lockTaken);
+			if (actionListCount == 0)
+			{
+				return;
+			}
+			dequing = true;
+		}
+		finally
+		{
+			if (lockTaken)
+			{
+				gate.Exit(useMemoryBarrier: false);
+			}
+		}
+		for (int i = 0; i < actionListCount; i++)
+		{
+			Callback callback = actionList[i];
+			actionList[i] = default(Callback);
+			callback.Invoke();
+		}
+		bool lockTaken2 = false;
+		try
+		{
+			gate.Enter(ref lockTaken2);
+			dequing = false;
+			Callback[] array = actionList;
+			actionListCount = waitingListCount;
+			actionList = waitingList;
+			waitingListCount = 0;
+			waitingList = array;
+		}
+		finally
+		{
+			if (lockTaken2)
+			{
+				gate.Exit(useMemoryBarrier: false);
+			}
+		}
 	}
 }

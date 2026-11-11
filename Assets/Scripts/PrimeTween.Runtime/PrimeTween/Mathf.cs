@@ -1,66 +1,144 @@
-using UnityEngine;
+using System;
+using System.Runtime.CompilerServices;
 
-namespace PrimeTween
+namespace PrimeTween;
+
+internal static class Mathf
 {
-	public class Mathf : MonoBehaviour
+	internal const float PI = MathF.PI;
+
+	private static volatile float FloatMinNormal = 1.1754944E-38f;
+
+	private static volatile float FloatMinDenormal = float.Epsilon;
+
+	private static bool IsFlushToZeroEnabled = (double)FloatMinDenormal == 0.0;
+
+	private static readonly float Epsilon = (IsFlushToZeroEnabled ? FloatMinNormal : FloatMinDenormal);
+
+	internal static float Min(float a, float b)
 	{
-		/*
-		Dummy class. This could have happened for several reasons:
+		if (!(a < b))
+		{
+			return b;
+		}
+		return a;
+	}
 
-		1. No dll files were provided to AssetRipper.
+	internal static float Max(float a, float b)
+	{
+		if (!(a > b))
+		{
+			return b;
+		}
+		return a;
+	}
 
-			Unity asset bundles and serialized files do not contain script information to decompile.
-				* For Mono games, that information is contained in .NET dll files.
-				* For Il2Cpp games, that information is contained in compiled C++ assemblies and the global metadata.
-				
-			AssetRipper usually expects games to conform to a normal file structure for Unity games of that platform.
-			A unexpected file structure could cause AssetRipper to not find the required files.
+	internal static bool Approximately(float a, float b)
+	{
+		return Abs(b - a) < Max(1E-06f * Max(Abs(a), Abs(b)), Epsilon * 8f);
+	}
 
-		2. Incorrect dll files were provided to AssetRipper.
+	internal static float Abs(float f)
+	{
+		if (!(f < 0f))
+		{
+			return f;
+		}
+		return 0f - f;
+	}
 
-			Any of the following could cause this:
-				* Il2CppInterop assemblies
-				* Deobfuscated assemblies
-				* Older assemblies (compared to when the bundle was built)
-				* Newer assemblies (compared to when the bundle was built)
+	internal static int Abs(int value)
+	{
+		return Math.Abs(value);
+	}
 
-			Note: Although assembly publicizing is bad, it alone cannot cause empty scripts. See: https://github.com/AssetRipper/AssetRipper/issues/653
+	internal static float InverseLerp(float a, float b, float value)
+	{
+		if (a == b)
+		{
+			return 0f;
+		}
+		return Clamp01((value - a) / (b - a));
+	}
 
-		3. Assembly Reconstruction has not been implemented.
+	internal static float Clamp01(float value)
+	{
+		if ((double)value < 0.0)
+		{
+			return 0f;
+		}
+		if (!((double)value > 1.0))
+		{
+			return value;
+		}
+		return 1f;
+	}
 
-			Asset bundles contain a small amount of information about the script content.
-			This information can be used to recover the serializable fields of a script.
+	internal static float Sqrt(float f)
+	{
+		return (float)Math.Sqrt(f);
+	}
 
-			See: https://github.com/AssetRipper/AssetRipper/issues/655
-	
-		4. This script is unnecessary.
+	internal static float Lerp(float a, float b, float t)
+	{
+		return a + (b - a) * Clamp01(t);
+	}
 
-			If this script has no asset or script references, it can be deleted.
-			Be sure to resolve any compile errors before deleting because they can hide references.
+	internal static float Pow(float f, float p)
+	{
+		return (float)Math.Pow(f, p);
+	}
 
-		5. Script Content Level 0
+	internal static float Asin(float f)
+	{
+		return (float)Math.Asin(f);
+	}
 
-			AssetRipper was set to not load any script information.
+	internal static float Sin(float f)
+	{
+		return (float)Math.Sin(f);
+	}
 
-		6. Cpp2IL failed to decompile Il2Cpp data
+	internal static float Cos(float f)
+	{
+		return (float)Math.Cos(f);
+	}
 
-			If this happened, there will be errors in the AssetRipper.log indicating that it happened.
-			This is an upstream problem, and the AssetRipper developer has very little control over it.
-			Please post a GitHub issue at: https://github.com/SamboyCoding/Cpp2IL/issues
+	internal static float Acos(float f)
+	{
+		return (float)Math.Acos(f);
+	}
 
-		7. An incorrect path was provided to AssetRipper.
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	internal static float Sign(float f)
+	{
+		if (!((double)f >= 0.0))
+		{
+			return -1f;
+		}
+		return 1f;
+	}
 
-			This is characterized by "Mixed game structure has been found at" in the AssetRipper.log file.
-			AssetRipper expects games to conform to a normal file structure for Unity games of that platform.
-			An unexpected file structure could cause AssetRipper to not find the required files for script decompilation.
-			Generally, AssetRipper expects users to provide the root folder of the game. For example:
-				* Windows: the folder containing the game's .exe file
-				* Mac: the .app file/folder
-				* Linux: the folder containing the game's executable file
-				* Android: the apk file
-				* iOS: the ipa file
-				* Switch: the folder containing exefs and romfs
+	internal static float Clamp(float value, float min, float max)
+	{
+		if (value < min)
+		{
+			value = min;
+		}
+		else if (value > max)
+		{
+			value = max;
+		}
+		return value;
+	}
 
-		*/
+	internal static int RoundToInt(float f)
+	{
+		return (int)Math.Round(f);
+	}
+
+	internal static float LerpUnclamped(float a, float b, float t)
+	{
+		return a + (b - a) * t;
 	}
 }

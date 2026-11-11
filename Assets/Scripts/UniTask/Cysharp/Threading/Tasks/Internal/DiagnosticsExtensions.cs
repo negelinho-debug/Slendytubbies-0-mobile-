@@ -1,66 +1,306 @@
-using UnityEngine;
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Globalization;
+using System.IO;
+using System.Linq;
+using System.Reflection;
+using System.Runtime.CompilerServices;
+using System.Security;
+using System.Text;
+using System.Text.RegularExpressions;
+using System.Threading.Tasks;
 
-namespace Cysharp.Threading.Tasks.Internal
+namespace Cysharp.Threading.Tasks.Internal;
+
+internal static class DiagnosticsExtensions
 {
-	public class DiagnosticsExtensions : MonoBehaviour
+	private static bool displayFilenames = true;
+
+	private static readonly Regex typeBeautifyRegex = new Regex("`.+$", RegexOptions.Compiled);
+
+	private static readonly Dictionary<Type, string> builtInTypeNames = new Dictionary<Type, string>
 	{
-		/*
-		Dummy class. This could have happened for several reasons:
+		{
+			typeof(void),
+			"void"
+		},
+		{
+			typeof(bool),
+			"bool"
+		},
+		{
+			typeof(byte),
+			"byte"
+		},
+		{
+			typeof(char),
+			"char"
+		},
+		{
+			typeof(decimal),
+			"decimal"
+		},
+		{
+			typeof(double),
+			"double"
+		},
+		{
+			typeof(float),
+			"float"
+		},
+		{
+			typeof(int),
+			"int"
+		},
+		{
+			typeof(long),
+			"long"
+		},
+		{
+			typeof(object),
+			"object"
+		},
+		{
+			typeof(sbyte),
+			"sbyte"
+		},
+		{
+			typeof(short),
+			"short"
+		},
+		{
+			typeof(string),
+			"string"
+		},
+		{
+			typeof(uint),
+			"uint"
+		},
+		{
+			typeof(ulong),
+			"ulong"
+		},
+		{
+			typeof(ushort),
+			"ushort"
+		},
+		{
+			typeof(Task),
+			"Task"
+		},
+		{
+			typeof(UniTask),
+			"UniTask"
+		},
+		{
+			typeof(UniTaskVoid),
+			"UniTaskVoid"
+		}
+	};
 
-		1. No dll files were provided to AssetRipper.
+	public static string CleanupAsyncStackTrace(this StackTrace stackTrace)
+	{
+		if (stackTrace == null)
+		{
+			return "";
+		}
+		StringBuilder stringBuilder = new StringBuilder();
+		for (int i = 0; i < stackTrace.FrameCount; i++)
+		{
+			StackFrame frame = stackTrace.GetFrame(i);
+			MethodBase method = frame.GetMethod();
+			if (IgnoreLine(method))
+			{
+				continue;
+			}
+			if (IsAsync(method))
+			{
+				stringBuilder.Append("async ");
+				TryResolveStateMachineMethod(ref method, out var _);
+			}
+			if (method is MethodInfo methodInfo)
+			{
+				stringBuilder.Append(BeautifyType(methodInfo.ReturnType, shortName: false));
+				stringBuilder.Append(" ");
+			}
+			stringBuilder.Append(BeautifyType(method.DeclaringType, shortName: false));
+			if (!method.IsConstructor)
+			{
+				stringBuilder.Append(".");
+			}
+			stringBuilder.Append(method.Name);
+			if (method.IsGenericMethod)
+			{
+				stringBuilder.Append("<");
+				Type[] genericArguments = method.GetGenericArguments();
+				foreach (Type t in genericArguments)
+				{
+					stringBuilder.Append(BeautifyType(t, shortName: true));
+				}
+				stringBuilder.Append(">");
+			}
+			stringBuilder.Append("(");
+			stringBuilder.Append(string.Join(", ", from p in method.GetParameters()
+				select BeautifyType(p.ParameterType, shortName: true) + " " + p.Name));
+			stringBuilder.Append(")");
+			if (displayFilenames && frame.GetILOffset() != -1)
+			{
+				string text = null;
+				try
+				{
+					text = frame.GetFileName();
+				}
+				catch (NotSupportedException)
+				{
+					displayFilenames = false;
+				}
+				catch (SecurityException)
+				{
+					displayFilenames = false;
+				}
+				if (text != null)
+				{
+					stringBuilder.Append(' ');
+					stringBuilder.AppendFormat(CultureInfo.InvariantCulture, "(at {0})", AppendHyperLink(text, frame.GetFileLineNumber().ToString()));
+				}
+			}
+			stringBuilder.AppendLine();
+		}
+		return stringBuilder.ToString();
+	}
 
-			Unity asset bundles and serialized files do not contain script information to decompile.
-				* For Mono games, that information is contained in .NET dll files.
-				* For Il2Cpp games, that information is contained in compiled C++ assemblies and the global metadata.
-				
-			AssetRipper usually expects games to conform to a normal file structure for Unity games of that platform.
-			A unexpected file structure could cause AssetRipper to not find the required files.
+	private static bool IsAsync(MethodBase methodInfo)
+	{
+		Type declaringType = methodInfo.DeclaringType;
+		return typeof(IAsyncStateMachine).IsAssignableFrom(declaringType);
+	}
 
-		2. Incorrect dll files were provided to AssetRipper.
+	private static bool TryResolveStateMachineMethod(ref MethodBase method, out Type declaringType)
+	{
+		declaringType = method.DeclaringType;
+		Type declaringType2 = declaringType.DeclaringType;
+		if (declaringType2 == null)
+		{
+			return false;
+		}
+		MethodInfo[] methods = declaringType2.GetMethods(BindingFlags.DeclaredOnly | BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
+		if (methods == null)
+		{
+			return false;
+		}
+		MethodInfo[] array = methods;
+		foreach (MethodInfo methodInfo in array)
+		{
+			IEnumerable<StateMachineAttribute> customAttributes = methodInfo.GetCustomAttributes<StateMachineAttribute>(inherit: false);
+			if (customAttributes == null)
+			{
+				continue;
+			}
+			foreach (StateMachineAttribute item in customAttributes)
+			{
+				if (item.StateMachineType == declaringType)
+				{
+					method = methodInfo;
+					declaringType = methodInfo.DeclaringType;
+					return item is IteratorStateMachineAttribute;
+				}
+			}
+		}
+		return false;
+	}
 
-			Any of the following could cause this:
-				* Il2CppInterop assemblies
-				* Deobfuscated assemblies
-				* Older assemblies (compared to when the bundle was built)
-				* Newer assemblies (compared to when the bundle was built)
+	private static string BeautifyType(Type t, bool shortName)
+	{
+		if (builtInTypeNames.TryGetValue(t, out var value))
+		{
+			return value;
+		}
+		if (t.IsGenericParameter)
+		{
+			return t.Name;
+		}
+		if (t.IsArray)
+		{
+			return BeautifyType(t.GetElementType(), shortName) + "[]";
+		}
+		string fullName = t.FullName;
+		if (fullName != null && fullName.StartsWith("System.ValueTuple"))
+		{
+			return "(" + string.Join(", ", from x in t.GetGenericArguments()
+				select BeautifyType(x, shortName: true)) + ")";
+		}
+		if (!t.IsGenericType)
+		{
+			string text;
+			if (!shortName)
+			{
+				text = t.FullName.Replace("Cysharp.Threading.Tasks.Triggers.", "").Replace("Cysharp.Threading.Tasks.Internal.", "").Replace("Cysharp.Threading.Tasks.", "");
+				if (text == null)
+				{
+					return t.Name;
+				}
+			}
+			else
+			{
+				text = t.Name;
+			}
+			return text;
+		}
+		string text2 = string.Join(", ", from x in t.GetGenericArguments()
+			select BeautifyType(x, shortName: true));
+		string text3 = t.GetGenericTypeDefinition().FullName;
+		if (text3 == "System.Threading.Tasks.Task`1")
+		{
+			text3 = "Task";
+		}
+		return typeBeautifyRegex.Replace(text3, "").Replace("Cysharp.Threading.Tasks.Triggers.", "").Replace("Cysharp.Threading.Tasks.Internal.", "")
+			.Replace("Cysharp.Threading.Tasks.", "") + "<" + text2 + ">";
+	}
 
-			Note: Although assembly publicizing is bad, it alone cannot cause empty scripts. See: https://github.com/AssetRipper/AssetRipper/issues/653
+	private static bool IgnoreLine(MethodBase methodInfo)
+	{
+		string fullName = methodInfo.DeclaringType.FullName;
+		if (fullName == "System.Threading.ExecutionContext")
+		{
+			return true;
+		}
+		if (fullName.StartsWith("System.Runtime.CompilerServices"))
+		{
+			return true;
+		}
+		if (fullName.StartsWith("Cysharp.Threading.Tasks.CompilerServices"))
+		{
+			return true;
+		}
+		if (fullName == "System.Threading.Tasks.AwaitTaskContinuation")
+		{
+			return true;
+		}
+		if (fullName.StartsWith("System.Threading.Tasks.Task"))
+		{
+			return true;
+		}
+		if (fullName.StartsWith("Cysharp.Threading.Tasks.UniTaskCompletionSourceCore"))
+		{
+			return true;
+		}
+		if (fullName.StartsWith("Cysharp.Threading.Tasks.AwaiterActions"))
+		{
+			return true;
+		}
+		return false;
+	}
 
-		3. Assembly Reconstruction has not been implemented.
-
-			Asset bundles contain a small amount of information about the script content.
-			This information can be used to recover the serializable fields of a script.
-
-			See: https://github.com/AssetRipper/AssetRipper/issues/655
-	
-		4. This script is unnecessary.
-
-			If this script has no asset or script references, it can be deleted.
-			Be sure to resolve any compile errors before deleting because they can hide references.
-
-		5. Script Content Level 0
-
-			AssetRipper was set to not load any script information.
-
-		6. Cpp2IL failed to decompile Il2Cpp data
-
-			If this happened, there will be errors in the AssetRipper.log indicating that it happened.
-			This is an upstream problem, and the AssetRipper developer has very little control over it.
-			Please post a GitHub issue at: https://github.com/SamboyCoding/Cpp2IL/issues
-
-		7. An incorrect path was provided to AssetRipper.
-
-			This is characterized by "Mixed game structure has been found at" in the AssetRipper.log file.
-			AssetRipper expects games to conform to a normal file structure for Unity games of that platform.
-			An unexpected file structure could cause AssetRipper to not find the required files for script decompilation.
-			Generally, AssetRipper expects users to provide the root folder of the game. For example:
-				* Windows: the folder containing the game's .exe file
-				* Mac: the .app file/folder
-				* Linux: the folder containing the game's executable file
-				* Android: the apk file
-				* iOS: the ipa file
-				* Switch: the folder containing exefs and romfs
-
-		*/
+	private static string AppendHyperLink(string path, string line)
+	{
+		FileInfo fileInfo = new FileInfo(path);
+		if (fileInfo.Directory == null)
+		{
+			return fileInfo.Name;
+		}
+		string text = fileInfo.FullName.Replace(Path.DirectorySeparatorChar, '/').Replace(PlayerLoopHelper.ApplicationDataPath, "");
+		string text2 = "Assets/" + text;
+		return "<a href=\"" + text2 + "\" line=\"" + line + "\">" + text2 + ":" + line + "</a>";
 	}
 }

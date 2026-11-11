@@ -1,66 +1,129 @@
-using UnityEngine;
+using System;
+using System.Threading;
 
-namespace Cysharp.Threading.Tasks
+namespace Cysharp.Threading.Tasks;
+
+public static class CancellationTokenExtensions
 {
-	public class CancellationTokenExtensions : MonoBehaviour
+	private static readonly Action<object> cancellationTokenCallback = Callback;
+
+	private static readonly Action<object> disposeCallback = DisposeCallback;
+
+	public static CancellationToken ToCancellationToken(this UniTask task)
 	{
-		/*
-		Dummy class. This could have happened for several reasons:
+		CancellationTokenSource cancellationTokenSource = new CancellationTokenSource();
+		ToCancellationTokenCore(task, cancellationTokenSource).Forget();
+		return cancellationTokenSource.Token;
+	}
 
-		1. No dll files were provided to AssetRipper.
+	public static CancellationToken ToCancellationToken(this UniTask task, CancellationToken linkToken)
+	{
+		if (linkToken.IsCancellationRequested)
+		{
+			return linkToken;
+		}
+		if (!linkToken.CanBeCanceled)
+		{
+			return task.ToCancellationToken();
+		}
+		CancellationTokenSource cancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(linkToken);
+		ToCancellationTokenCore(task, cancellationTokenSource).Forget();
+		return cancellationTokenSource.Token;
+	}
 
-			Unity asset bundles and serialized files do not contain script information to decompile.
-				* For Mono games, that information is contained in .NET dll files.
-				* For Il2Cpp games, that information is contained in compiled C++ assemblies and the global metadata.
-				
-			AssetRipper usually expects games to conform to a normal file structure for Unity games of that platform.
-			A unexpected file structure could cause AssetRipper to not find the required files.
+	public static CancellationToken ToCancellationToken<T>(this UniTask<T> task)
+	{
+		return task.AsUniTask().ToCancellationToken();
+	}
 
-		2. Incorrect dll files were provided to AssetRipper.
+	public static CancellationToken ToCancellationToken<T>(this UniTask<T> task, CancellationToken linkToken)
+	{
+		return task.AsUniTask().ToCancellationToken(linkToken);
+	}
 
-			Any of the following could cause this:
-				* Il2CppInterop assemblies
-				* Deobfuscated assemblies
-				* Older assemblies (compared to when the bundle was built)
-				* Newer assemblies (compared to when the bundle was built)
+	private static async UniTaskVoid ToCancellationTokenCore(UniTask task, CancellationTokenSource cts)
+	{
+		try
+		{
+			await task;
+		}
+		catch (Exception ex)
+		{
+			UniTaskScheduler.PublishUnobservedTaskException(ex);
+		}
+		cts.Cancel();
+		cts.Dispose();
+	}
 
-			Note: Although assembly publicizing is bad, it alone cannot cause empty scripts. See: https://github.com/AssetRipper/AssetRipper/issues/653
+	public static (UniTask, CancellationTokenRegistration) ToUniTask(this CancellationToken cancellationToken)
+	{
+		if (cancellationToken.IsCancellationRequested)
+		{
+			return (UniTask.FromCanceled(cancellationToken), default(CancellationTokenRegistration));
+		}
+		UniTaskCompletionSource uniTaskCompletionSource = new UniTaskCompletionSource();
+		return (uniTaskCompletionSource.Task, cancellationToken.RegisterWithoutCaptureExecutionContext(cancellationTokenCallback, uniTaskCompletionSource));
+	}
 
-		3. Assembly Reconstruction has not been implemented.
+	private static void Callback(object state)
+	{
+		((UniTaskCompletionSource)state).TrySetResult();
+	}
 
-			Asset bundles contain a small amount of information about the script content.
-			This information can be used to recover the serializable fields of a script.
+	public static CancellationTokenAwaitable WaitUntilCanceled(this CancellationToken cancellationToken)
+	{
+		return new CancellationTokenAwaitable(cancellationToken);
+	}
 
-			See: https://github.com/AssetRipper/AssetRipper/issues/655
-	
-		4. This script is unnecessary.
+	public static CancellationTokenRegistration RegisterWithoutCaptureExecutionContext(this CancellationToken cancellationToken, Action callback)
+	{
+		bool flag = false;
+		if (!ExecutionContext.IsFlowSuppressed())
+		{
+			ExecutionContext.SuppressFlow();
+			flag = true;
+		}
+		try
+		{
+			return cancellationToken.Register(callback, useSynchronizationContext: false);
+		}
+		finally
+		{
+			if (flag)
+			{
+				ExecutionContext.RestoreFlow();
+			}
+		}
+	}
 
-			If this script has no asset or script references, it can be deleted.
-			Be sure to resolve any compile errors before deleting because they can hide references.
+	public static CancellationTokenRegistration RegisterWithoutCaptureExecutionContext(this CancellationToken cancellationToken, Action<object> callback, object state)
+	{
+		bool flag = false;
+		if (!ExecutionContext.IsFlowSuppressed())
+		{
+			ExecutionContext.SuppressFlow();
+			flag = true;
+		}
+		try
+		{
+			return cancellationToken.Register(callback, state, useSynchronizationContext: false);
+		}
+		finally
+		{
+			if (flag)
+			{
+				ExecutionContext.RestoreFlow();
+			}
+		}
+	}
 
-		5. Script Content Level 0
+	public static CancellationTokenRegistration AddTo(this IDisposable disposable, CancellationToken cancellationToken)
+	{
+		return cancellationToken.RegisterWithoutCaptureExecutionContext(disposeCallback, disposable);
+	}
 
-			AssetRipper was set to not load any script information.
-
-		6. Cpp2IL failed to decompile Il2Cpp data
-
-			If this happened, there will be errors in the AssetRipper.log indicating that it happened.
-			This is an upstream problem, and the AssetRipper developer has very little control over it.
-			Please post a GitHub issue at: https://github.com/SamboyCoding/Cpp2IL/issues
-
-		7. An incorrect path was provided to AssetRipper.
-
-			This is characterized by "Mixed game structure has been found at" in the AssetRipper.log file.
-			AssetRipper expects games to conform to a normal file structure for Unity games of that platform.
-			An unexpected file structure could cause AssetRipper to not find the required files for script decompilation.
-			Generally, AssetRipper expects users to provide the root folder of the game. For example:
-				* Windows: the folder containing the game's .exe file
-				* Mac: the .app file/folder
-				* Linux: the folder containing the game's executable file
-				* Android: the apk file
-				* iOS: the ipa file
-				* Switch: the folder containing exefs and romfs
-
-		*/
+	private static void DisposeCallback(object state)
+	{
+		((IDisposable)state).Dispose();
 	}
 }

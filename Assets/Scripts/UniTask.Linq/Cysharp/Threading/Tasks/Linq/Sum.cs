@@ -1,66 +1,1138 @@
-using UnityEngine;
+using System;
+using System.Runtime.ExceptionServices;
+using System.Threading;
 
-namespace Cysharp.Threading.Tasks.Linq
+namespace Cysharp.Threading.Tasks.Linq;
+
+internal static class Sum
 {
-	public class Sum : MonoBehaviour
+	public static async UniTask<int> SumAsync(IUniTaskAsyncEnumerable<int> source, CancellationToken cancellationToken)
 	{
-		/*
-		Dummy class. This could have happened for several reasons:
+		int sum = 0;
+		IUniTaskAsyncEnumerator<int> e = source.GetAsyncEnumerator(cancellationToken);
+		object obj = null;
+		try
+		{
+			while (await e.MoveNextAsync())
+			{
+				sum += e.Current;
+			}
+		}
+		catch (object obj2)
+		{
+			obj = obj2;
+		}
+		if (e != null)
+		{
+			await e.DisposeAsync();
+		}
+		object obj3 = obj;
+		if (obj3 != null)
+		{
+			ExceptionDispatchInfo.Capture((obj3 as Exception) ?? throw obj3).Throw();
+		}
+		return sum;
+	}
 
-		1. No dll files were provided to AssetRipper.
+	public static async UniTask<int> SumAsync<TSource>(IUniTaskAsyncEnumerable<TSource> source, Func<TSource, int> selector, CancellationToken cancellationToken)
+	{
+		int sum = 0;
+		IUniTaskAsyncEnumerator<TSource> e = source.GetAsyncEnumerator(cancellationToken);
+		object obj = null;
+		try
+		{
+			while (await e.MoveNextAsync())
+			{
+				sum += selector(e.Current);
+			}
+		}
+		catch (object obj2)
+		{
+			obj = obj2;
+		}
+		if (e != null)
+		{
+			await e.DisposeAsync();
+		}
+		object obj3 = obj;
+		if (obj3 != null)
+		{
+			ExceptionDispatchInfo.Capture((obj3 as Exception) ?? throw obj3).Throw();
+		}
+		return sum;
+	}
 
-			Unity asset bundles and serialized files do not contain script information to decompile.
-				* For Mono games, that information is contained in .NET dll files.
-				* For Il2Cpp games, that information is contained in compiled C++ assemblies and the global metadata.
-				
-			AssetRipper usually expects games to conform to a normal file structure for Unity games of that platform.
-			A unexpected file structure could cause AssetRipper to not find the required files.
+	public static async UniTask<int> SumAwaitAsync<TSource>(IUniTaskAsyncEnumerable<TSource> source, Func<TSource, UniTask<int>> selector, CancellationToken cancellationToken)
+	{
+		int sum = 0;
+		IUniTaskAsyncEnumerator<TSource> e = source.GetAsyncEnumerator(cancellationToken);
+		object obj = null;
+		try
+		{
+			while (await e.MoveNextAsync())
+			{
+				int num = sum;
+				sum = num + await selector(e.Current);
+			}
+		}
+		catch (object obj2)
+		{
+			obj = obj2;
+		}
+		if (e != null)
+		{
+			await e.DisposeAsync();
+		}
+		object obj3 = obj;
+		if (obj3 != null)
+		{
+			ExceptionDispatchInfo.Capture((obj3 as Exception) ?? throw obj3).Throw();
+		}
+		return sum;
+	}
 
-		2. Incorrect dll files were provided to AssetRipper.
+	public static async UniTask<int> SumAwaitWithCancellationAsync<TSource>(IUniTaskAsyncEnumerable<TSource> source, Func<TSource, CancellationToken, UniTask<int>> selector, CancellationToken cancellationToken)
+	{
+		int sum = 0;
+		IUniTaskAsyncEnumerator<TSource> e = source.GetAsyncEnumerator(cancellationToken);
+		object obj = null;
+		try
+		{
+			while (await e.MoveNextAsync())
+			{
+				int num = sum;
+				sum = num + await selector(e.Current, cancellationToken);
+			}
+		}
+		catch (object obj2)
+		{
+			obj = obj2;
+		}
+		if (e != null)
+		{
+			await e.DisposeAsync();
+		}
+		object obj3 = obj;
+		if (obj3 != null)
+		{
+			ExceptionDispatchInfo.Capture((obj3 as Exception) ?? throw obj3).Throw();
+		}
+		return sum;
+	}
 
-			Any of the following could cause this:
-				* Il2CppInterop assemblies
-				* Deobfuscated assemblies
-				* Older assemblies (compared to when the bundle was built)
-				* Newer assemblies (compared to when the bundle was built)
+	public static async UniTask<long> SumAsync(IUniTaskAsyncEnumerable<long> source, CancellationToken cancellationToken)
+	{
+		long sum = 0L;
+		IUniTaskAsyncEnumerator<long> e = source.GetAsyncEnumerator(cancellationToken);
+		object obj = null;
+		try
+		{
+			while (await e.MoveNextAsync())
+			{
+				sum += e.Current;
+			}
+		}
+		catch (object obj2)
+		{
+			obj = obj2;
+		}
+		if (e != null)
+		{
+			await e.DisposeAsync();
+		}
+		object obj3 = obj;
+		if (obj3 != null)
+		{
+			ExceptionDispatchInfo.Capture((obj3 as Exception) ?? throw obj3).Throw();
+		}
+		return sum;
+	}
 
-			Note: Although assembly publicizing is bad, it alone cannot cause empty scripts. See: https://github.com/AssetRipper/AssetRipper/issues/653
+	public static async UniTask<long> SumAsync<TSource>(IUniTaskAsyncEnumerable<TSource> source, Func<TSource, long> selector, CancellationToken cancellationToken)
+	{
+		long sum = 0L;
+		IUniTaskAsyncEnumerator<TSource> e = source.GetAsyncEnumerator(cancellationToken);
+		object obj = null;
+		try
+		{
+			while (await e.MoveNextAsync())
+			{
+				sum += selector(e.Current);
+			}
+		}
+		catch (object obj2)
+		{
+			obj = obj2;
+		}
+		if (e != null)
+		{
+			await e.DisposeAsync();
+		}
+		object obj3 = obj;
+		if (obj3 != null)
+		{
+			ExceptionDispatchInfo.Capture((obj3 as Exception) ?? throw obj3).Throw();
+		}
+		return sum;
+	}
 
-		3. Assembly Reconstruction has not been implemented.
+	public static async UniTask<long> SumAwaitAsync<TSource>(IUniTaskAsyncEnumerable<TSource> source, Func<TSource, UniTask<long>> selector, CancellationToken cancellationToken)
+	{
+		long sum = 0L;
+		IUniTaskAsyncEnumerator<TSource> e = source.GetAsyncEnumerator(cancellationToken);
+		object obj = null;
+		try
+		{
+			while (await e.MoveNextAsync())
+			{
+				long num = sum;
+				sum = num + await selector(e.Current);
+			}
+		}
+		catch (object obj2)
+		{
+			obj = obj2;
+		}
+		if (e != null)
+		{
+			await e.DisposeAsync();
+		}
+		object obj3 = obj;
+		if (obj3 != null)
+		{
+			ExceptionDispatchInfo.Capture((obj3 as Exception) ?? throw obj3).Throw();
+		}
+		return sum;
+	}
 
-			Asset bundles contain a small amount of information about the script content.
-			This information can be used to recover the serializable fields of a script.
+	public static async UniTask<long> SumAwaitWithCancellationAsync<TSource>(IUniTaskAsyncEnumerable<TSource> source, Func<TSource, CancellationToken, UniTask<long>> selector, CancellationToken cancellationToken)
+	{
+		long sum = 0L;
+		IUniTaskAsyncEnumerator<TSource> e = source.GetAsyncEnumerator(cancellationToken);
+		object obj = null;
+		try
+		{
+			while (await e.MoveNextAsync())
+			{
+				long num = sum;
+				sum = num + await selector(e.Current, cancellationToken);
+			}
+		}
+		catch (object obj2)
+		{
+			obj = obj2;
+		}
+		if (e != null)
+		{
+			await e.DisposeAsync();
+		}
+		object obj3 = obj;
+		if (obj3 != null)
+		{
+			ExceptionDispatchInfo.Capture((obj3 as Exception) ?? throw obj3).Throw();
+		}
+		return sum;
+	}
 
-			See: https://github.com/AssetRipper/AssetRipper/issues/655
-	
-		4. This script is unnecessary.
+	public static async UniTask<float> SumAsync(IUniTaskAsyncEnumerable<float> source, CancellationToken cancellationToken)
+	{
+		float sum = 0f;
+		IUniTaskAsyncEnumerator<float> e = source.GetAsyncEnumerator(cancellationToken);
+		object obj = null;
+		try
+		{
+			while (await e.MoveNextAsync())
+			{
+				sum += e.Current;
+			}
+		}
+		catch (object obj2)
+		{
+			obj = obj2;
+		}
+		if (e != null)
+		{
+			await e.DisposeAsync();
+		}
+		object obj3 = obj;
+		if (obj3 != null)
+		{
+			ExceptionDispatchInfo.Capture((obj3 as Exception) ?? throw obj3).Throw();
+		}
+		return sum;
+	}
 
-			If this script has no asset or script references, it can be deleted.
-			Be sure to resolve any compile errors before deleting because they can hide references.
+	public static async UniTask<float> SumAsync<TSource>(IUniTaskAsyncEnumerable<TSource> source, Func<TSource, float> selector, CancellationToken cancellationToken)
+	{
+		float sum = 0f;
+		IUniTaskAsyncEnumerator<TSource> e = source.GetAsyncEnumerator(cancellationToken);
+		object obj = null;
+		try
+		{
+			while (await e.MoveNextAsync())
+			{
+				sum += selector(e.Current);
+			}
+		}
+		catch (object obj2)
+		{
+			obj = obj2;
+		}
+		if (e != null)
+		{
+			await e.DisposeAsync();
+		}
+		object obj3 = obj;
+		if (obj3 != null)
+		{
+			ExceptionDispatchInfo.Capture((obj3 as Exception) ?? throw obj3).Throw();
+		}
+		return sum;
+	}
 
-		5. Script Content Level 0
+	public static async UniTask<float> SumAwaitAsync<TSource>(IUniTaskAsyncEnumerable<TSource> source, Func<TSource, UniTask<float>> selector, CancellationToken cancellationToken)
+	{
+		float sum = 0f;
+		IUniTaskAsyncEnumerator<TSource> e = source.GetAsyncEnumerator(cancellationToken);
+		object obj = null;
+		try
+		{
+			while (await e.MoveNextAsync())
+			{
+				float num = sum;
+				sum = num + await selector(e.Current);
+			}
+		}
+		catch (object obj2)
+		{
+			obj = obj2;
+		}
+		if (e != null)
+		{
+			await e.DisposeAsync();
+		}
+		object obj3 = obj;
+		if (obj3 != null)
+		{
+			ExceptionDispatchInfo.Capture((obj3 as Exception) ?? throw obj3).Throw();
+		}
+		return sum;
+	}
 
-			AssetRipper was set to not load any script information.
+	public static async UniTask<float> SumAwaitWithCancellationAsync<TSource>(IUniTaskAsyncEnumerable<TSource> source, Func<TSource, CancellationToken, UniTask<float>> selector, CancellationToken cancellationToken)
+	{
+		float sum = 0f;
+		IUniTaskAsyncEnumerator<TSource> e = source.GetAsyncEnumerator(cancellationToken);
+		object obj = null;
+		try
+		{
+			while (await e.MoveNextAsync())
+			{
+				float num = sum;
+				sum = num + await selector(e.Current, cancellationToken);
+			}
+		}
+		catch (object obj2)
+		{
+			obj = obj2;
+		}
+		if (e != null)
+		{
+			await e.DisposeAsync();
+		}
+		object obj3 = obj;
+		if (obj3 != null)
+		{
+			ExceptionDispatchInfo.Capture((obj3 as Exception) ?? throw obj3).Throw();
+		}
+		return sum;
+	}
 
-		6. Cpp2IL failed to decompile Il2Cpp data
+	public static async UniTask<double> SumAsync(IUniTaskAsyncEnumerable<double> source, CancellationToken cancellationToken)
+	{
+		double sum = 0.0;
+		IUniTaskAsyncEnumerator<double> e = source.GetAsyncEnumerator(cancellationToken);
+		object obj = null;
+		try
+		{
+			while (await e.MoveNextAsync())
+			{
+				sum += e.Current;
+			}
+		}
+		catch (object obj2)
+		{
+			obj = obj2;
+		}
+		if (e != null)
+		{
+			await e.DisposeAsync();
+		}
+		object obj3 = obj;
+		if (obj3 != null)
+		{
+			ExceptionDispatchInfo.Capture((obj3 as Exception) ?? throw obj3).Throw();
+		}
+		return sum;
+	}
 
-			If this happened, there will be errors in the AssetRipper.log indicating that it happened.
-			This is an upstream problem, and the AssetRipper developer has very little control over it.
-			Please post a GitHub issue at: https://github.com/SamboyCoding/Cpp2IL/issues
+	public static async UniTask<double> SumAsync<TSource>(IUniTaskAsyncEnumerable<TSource> source, Func<TSource, double> selector, CancellationToken cancellationToken)
+	{
+		double sum = 0.0;
+		IUniTaskAsyncEnumerator<TSource> e = source.GetAsyncEnumerator(cancellationToken);
+		object obj = null;
+		try
+		{
+			while (await e.MoveNextAsync())
+			{
+				sum += selector(e.Current);
+			}
+		}
+		catch (object obj2)
+		{
+			obj = obj2;
+		}
+		if (e != null)
+		{
+			await e.DisposeAsync();
+		}
+		object obj3 = obj;
+		if (obj3 != null)
+		{
+			ExceptionDispatchInfo.Capture((obj3 as Exception) ?? throw obj3).Throw();
+		}
+		return sum;
+	}
 
-		7. An incorrect path was provided to AssetRipper.
+	public static async UniTask<double> SumAwaitAsync<TSource>(IUniTaskAsyncEnumerable<TSource> source, Func<TSource, UniTask<double>> selector, CancellationToken cancellationToken)
+	{
+		double sum = 0.0;
+		IUniTaskAsyncEnumerator<TSource> e = source.GetAsyncEnumerator(cancellationToken);
+		object obj = null;
+		try
+		{
+			while (await e.MoveNextAsync())
+			{
+				double num = sum;
+				sum = num + await selector(e.Current);
+			}
+		}
+		catch (object obj2)
+		{
+			obj = obj2;
+		}
+		if (e != null)
+		{
+			await e.DisposeAsync();
+		}
+		object obj3 = obj;
+		if (obj3 != null)
+		{
+			ExceptionDispatchInfo.Capture((obj3 as Exception) ?? throw obj3).Throw();
+		}
+		return sum;
+	}
 
-			This is characterized by "Mixed game structure has been found at" in the AssetRipper.log file.
-			AssetRipper expects games to conform to a normal file structure for Unity games of that platform.
-			An unexpected file structure could cause AssetRipper to not find the required files for script decompilation.
-			Generally, AssetRipper expects users to provide the root folder of the game. For example:
-				* Windows: the folder containing the game's .exe file
-				* Mac: the .app file/folder
-				* Linux: the folder containing the game's executable file
-				* Android: the apk file
-				* iOS: the ipa file
-				* Switch: the folder containing exefs and romfs
+	public static async UniTask<double> SumAwaitWithCancellationAsync<TSource>(IUniTaskAsyncEnumerable<TSource> source, Func<TSource, CancellationToken, UniTask<double>> selector, CancellationToken cancellationToken)
+	{
+		double sum = 0.0;
+		IUniTaskAsyncEnumerator<TSource> e = source.GetAsyncEnumerator(cancellationToken);
+		object obj = null;
+		try
+		{
+			while (await e.MoveNextAsync())
+			{
+				double num = sum;
+				sum = num + await selector(e.Current, cancellationToken);
+			}
+		}
+		catch (object obj2)
+		{
+			obj = obj2;
+		}
+		if (e != null)
+		{
+			await e.DisposeAsync();
+		}
+		object obj3 = obj;
+		if (obj3 != null)
+		{
+			ExceptionDispatchInfo.Capture((obj3 as Exception) ?? throw obj3).Throw();
+		}
+		return sum;
+	}
 
-		*/
+	public static async UniTask<decimal> SumAsync(IUniTaskAsyncEnumerable<decimal> source, CancellationToken cancellationToken)
+	{
+		decimal sum = default(decimal);
+		IUniTaskAsyncEnumerator<decimal> e = source.GetAsyncEnumerator(cancellationToken);
+		object obj = null;
+		try
+		{
+			while (await e.MoveNextAsync())
+			{
+				sum += e.Current;
+			}
+		}
+		catch (object obj2)
+		{
+			obj = obj2;
+		}
+		if (e != null)
+		{
+			await e.DisposeAsync();
+		}
+		object obj3 = obj;
+		if (obj3 != null)
+		{
+			ExceptionDispatchInfo.Capture((obj3 as Exception) ?? throw obj3).Throw();
+		}
+		return sum;
+	}
+
+	public static async UniTask<decimal> SumAsync<TSource>(IUniTaskAsyncEnumerable<TSource> source, Func<TSource, decimal> selector, CancellationToken cancellationToken)
+	{
+		decimal sum = default(decimal);
+		IUniTaskAsyncEnumerator<TSource> e = source.GetAsyncEnumerator(cancellationToken);
+		object obj = null;
+		try
+		{
+			while (await e.MoveNextAsync())
+			{
+				sum += selector(e.Current);
+			}
+		}
+		catch (object obj2)
+		{
+			obj = obj2;
+		}
+		if (e != null)
+		{
+			await e.DisposeAsync();
+		}
+		object obj3 = obj;
+		if (obj3 != null)
+		{
+			ExceptionDispatchInfo.Capture((obj3 as Exception) ?? throw obj3).Throw();
+		}
+		return sum;
+	}
+
+	public static async UniTask<decimal> SumAwaitAsync<TSource>(IUniTaskAsyncEnumerable<TSource> source, Func<TSource, UniTask<decimal>> selector, CancellationToken cancellationToken)
+	{
+		decimal sum = default(decimal);
+		IUniTaskAsyncEnumerator<TSource> e = source.GetAsyncEnumerator(cancellationToken);
+		object obj = null;
+		try
+		{
+			while (await e.MoveNextAsync())
+			{
+				decimal num = sum;
+				sum = num + await selector(e.Current);
+			}
+		}
+		catch (object obj2)
+		{
+			obj = obj2;
+		}
+		if (e != null)
+		{
+			await e.DisposeAsync();
+		}
+		object obj3 = obj;
+		if (obj3 != null)
+		{
+			ExceptionDispatchInfo.Capture((obj3 as Exception) ?? throw obj3).Throw();
+		}
+		return sum;
+	}
+
+	public static async UniTask<decimal> SumAwaitWithCancellationAsync<TSource>(IUniTaskAsyncEnumerable<TSource> source, Func<TSource, CancellationToken, UniTask<decimal>> selector, CancellationToken cancellationToken)
+	{
+		decimal sum = default(decimal);
+		IUniTaskAsyncEnumerator<TSource> e = source.GetAsyncEnumerator(cancellationToken);
+		object obj = null;
+		try
+		{
+			while (await e.MoveNextAsync())
+			{
+				decimal num = sum;
+				sum = num + await selector(e.Current, cancellationToken);
+			}
+		}
+		catch (object obj2)
+		{
+			obj = obj2;
+		}
+		if (e != null)
+		{
+			await e.DisposeAsync();
+		}
+		object obj3 = obj;
+		if (obj3 != null)
+		{
+			ExceptionDispatchInfo.Capture((obj3 as Exception) ?? throw obj3).Throw();
+		}
+		return sum;
+	}
+
+	public static async UniTask<int?> SumAsync(IUniTaskAsyncEnumerable<int?> source, CancellationToken cancellationToken)
+	{
+		int? sum = null;
+		IUniTaskAsyncEnumerator<int?> e = source.GetAsyncEnumerator(cancellationToken);
+		object obj = null;
+		try
+		{
+			while (await e.MoveNextAsync())
+			{
+				sum += e.Current.GetValueOrDefault();
+			}
+		}
+		catch (object obj2)
+		{
+			obj = obj2;
+		}
+		if (e != null)
+		{
+			await e.DisposeAsync();
+		}
+		object obj3 = obj;
+		if (obj3 != null)
+		{
+			ExceptionDispatchInfo.Capture((obj3 as Exception) ?? throw obj3).Throw();
+		}
+		return sum;
+	}
+
+	public static async UniTask<int?> SumAsync<TSource>(IUniTaskAsyncEnumerable<TSource> source, Func<TSource, int?> selector, CancellationToken cancellationToken)
+	{
+		int? sum = null;
+		IUniTaskAsyncEnumerator<TSource> e = source.GetAsyncEnumerator(cancellationToken);
+		object obj = null;
+		try
+		{
+			while (await e.MoveNextAsync())
+			{
+				sum += selector(e.Current).GetValueOrDefault();
+			}
+		}
+		catch (object obj2)
+		{
+			obj = obj2;
+		}
+		if (e != null)
+		{
+			await e.DisposeAsync();
+		}
+		object obj3 = obj;
+		if (obj3 != null)
+		{
+			ExceptionDispatchInfo.Capture((obj3 as Exception) ?? throw obj3).Throw();
+		}
+		return sum;
+	}
+
+	public static async UniTask<int?> SumAwaitAsync<TSource>(IUniTaskAsyncEnumerable<TSource> source, Func<TSource, UniTask<int?>> selector, CancellationToken cancellationToken)
+	{
+		int? sum = null;
+		IUniTaskAsyncEnumerator<TSource> e = source.GetAsyncEnumerator(cancellationToken);
+		object obj = null;
+		try
+		{
+			while (await e.MoveNextAsync())
+			{
+				sum += (await selector(e.Current)).GetValueOrDefault();
+			}
+		}
+		catch (object obj2)
+		{
+			obj = obj2;
+		}
+		if (e != null)
+		{
+			await e.DisposeAsync();
+		}
+		object obj3 = obj;
+		if (obj3 != null)
+		{
+			ExceptionDispatchInfo.Capture((obj3 as Exception) ?? throw obj3).Throw();
+		}
+		return sum;
+	}
+
+	public static async UniTask<int?> SumAwaitWithCancellationAsync<TSource>(IUniTaskAsyncEnumerable<TSource> source, Func<TSource, CancellationToken, UniTask<int?>> selector, CancellationToken cancellationToken)
+	{
+		int? sum = null;
+		IUniTaskAsyncEnumerator<TSource> e = source.GetAsyncEnumerator(cancellationToken);
+		object obj = null;
+		try
+		{
+			while (await e.MoveNextAsync())
+			{
+				sum += (await selector(e.Current, cancellationToken)).GetValueOrDefault();
+			}
+		}
+		catch (object obj2)
+		{
+			obj = obj2;
+		}
+		if (e != null)
+		{
+			await e.DisposeAsync();
+		}
+		object obj3 = obj;
+		if (obj3 != null)
+		{
+			ExceptionDispatchInfo.Capture((obj3 as Exception) ?? throw obj3).Throw();
+		}
+		return sum;
+	}
+
+	public static async UniTask<long?> SumAsync(IUniTaskAsyncEnumerable<long?> source, CancellationToken cancellationToken)
+	{
+		long? sum = null;
+		IUniTaskAsyncEnumerator<long?> e = source.GetAsyncEnumerator(cancellationToken);
+		object obj = null;
+		try
+		{
+			while (await e.MoveNextAsync())
+			{
+				sum += e.Current.GetValueOrDefault();
+			}
+		}
+		catch (object obj2)
+		{
+			obj = obj2;
+		}
+		if (e != null)
+		{
+			await e.DisposeAsync();
+		}
+		object obj3 = obj;
+		if (obj3 != null)
+		{
+			ExceptionDispatchInfo.Capture((obj3 as Exception) ?? throw obj3).Throw();
+		}
+		return sum;
+	}
+
+	public static async UniTask<long?> SumAsync<TSource>(IUniTaskAsyncEnumerable<TSource> source, Func<TSource, long?> selector, CancellationToken cancellationToken)
+	{
+		long? sum = null;
+		IUniTaskAsyncEnumerator<TSource> e = source.GetAsyncEnumerator(cancellationToken);
+		object obj = null;
+		try
+		{
+			while (await e.MoveNextAsync())
+			{
+				sum += selector(e.Current).GetValueOrDefault();
+			}
+		}
+		catch (object obj2)
+		{
+			obj = obj2;
+		}
+		if (e != null)
+		{
+			await e.DisposeAsync();
+		}
+		object obj3 = obj;
+		if (obj3 != null)
+		{
+			ExceptionDispatchInfo.Capture((obj3 as Exception) ?? throw obj3).Throw();
+		}
+		return sum;
+	}
+
+	public static async UniTask<long?> SumAwaitAsync<TSource>(IUniTaskAsyncEnumerable<TSource> source, Func<TSource, UniTask<long?>> selector, CancellationToken cancellationToken)
+	{
+		long? sum = null;
+		IUniTaskAsyncEnumerator<TSource> e = source.GetAsyncEnumerator(cancellationToken);
+		object obj = null;
+		try
+		{
+			while (await e.MoveNextAsync())
+			{
+				sum += (await selector(e.Current)).GetValueOrDefault();
+			}
+		}
+		catch (object obj2)
+		{
+			obj = obj2;
+		}
+		if (e != null)
+		{
+			await e.DisposeAsync();
+		}
+		object obj3 = obj;
+		if (obj3 != null)
+		{
+			ExceptionDispatchInfo.Capture((obj3 as Exception) ?? throw obj3).Throw();
+		}
+		return sum;
+	}
+
+	public static async UniTask<long?> SumAwaitWithCancellationAsync<TSource>(IUniTaskAsyncEnumerable<TSource> source, Func<TSource, CancellationToken, UniTask<long?>> selector, CancellationToken cancellationToken)
+	{
+		long? sum = null;
+		IUniTaskAsyncEnumerator<TSource> e = source.GetAsyncEnumerator(cancellationToken);
+		object obj = null;
+		try
+		{
+			while (await e.MoveNextAsync())
+			{
+				sum += (await selector(e.Current, cancellationToken)).GetValueOrDefault();
+			}
+		}
+		catch (object obj2)
+		{
+			obj = obj2;
+		}
+		if (e != null)
+		{
+			await e.DisposeAsync();
+		}
+		object obj3 = obj;
+		if (obj3 != null)
+		{
+			ExceptionDispatchInfo.Capture((obj3 as Exception) ?? throw obj3).Throw();
+		}
+		return sum;
+	}
+
+	public static async UniTask<float?> SumAsync(IUniTaskAsyncEnumerable<float?> source, CancellationToken cancellationToken)
+	{
+		float? sum = null;
+		IUniTaskAsyncEnumerator<float?> e = source.GetAsyncEnumerator(cancellationToken);
+		object obj = null;
+		try
+		{
+			while (await e.MoveNextAsync())
+			{
+				sum += e.Current.GetValueOrDefault();
+			}
+		}
+		catch (object obj2)
+		{
+			obj = obj2;
+		}
+		if (e != null)
+		{
+			await e.DisposeAsync();
+		}
+		object obj3 = obj;
+		if (obj3 != null)
+		{
+			ExceptionDispatchInfo.Capture((obj3 as Exception) ?? throw obj3).Throw();
+		}
+		return sum;
+	}
+
+	public static async UniTask<float?> SumAsync<TSource>(IUniTaskAsyncEnumerable<TSource> source, Func<TSource, float?> selector, CancellationToken cancellationToken)
+	{
+		float? sum = null;
+		IUniTaskAsyncEnumerator<TSource> e = source.GetAsyncEnumerator(cancellationToken);
+		object obj = null;
+		try
+		{
+			while (await e.MoveNextAsync())
+			{
+				sum += selector(e.Current).GetValueOrDefault();
+			}
+		}
+		catch (object obj2)
+		{
+			obj = obj2;
+		}
+		if (e != null)
+		{
+			await e.DisposeAsync();
+		}
+		object obj3 = obj;
+		if (obj3 != null)
+		{
+			ExceptionDispatchInfo.Capture((obj3 as Exception) ?? throw obj3).Throw();
+		}
+		return sum;
+	}
+
+	public static async UniTask<float?> SumAwaitAsync<TSource>(IUniTaskAsyncEnumerable<TSource> source, Func<TSource, UniTask<float?>> selector, CancellationToken cancellationToken)
+	{
+		float? sum = null;
+		IUniTaskAsyncEnumerator<TSource> e = source.GetAsyncEnumerator(cancellationToken);
+		object obj = null;
+		try
+		{
+			while (await e.MoveNextAsync())
+			{
+				sum += (await selector(e.Current)).GetValueOrDefault();
+			}
+		}
+		catch (object obj2)
+		{
+			obj = obj2;
+		}
+		if (e != null)
+		{
+			await e.DisposeAsync();
+		}
+		object obj3 = obj;
+		if (obj3 != null)
+		{
+			ExceptionDispatchInfo.Capture((obj3 as Exception) ?? throw obj3).Throw();
+		}
+		return sum;
+	}
+
+	public static async UniTask<float?> SumAwaitWithCancellationAsync<TSource>(IUniTaskAsyncEnumerable<TSource> source, Func<TSource, CancellationToken, UniTask<float?>> selector, CancellationToken cancellationToken)
+	{
+		float? sum = null;
+		IUniTaskAsyncEnumerator<TSource> e = source.GetAsyncEnumerator(cancellationToken);
+		object obj = null;
+		try
+		{
+			while (await e.MoveNextAsync())
+			{
+				sum += (await selector(e.Current, cancellationToken)).GetValueOrDefault();
+			}
+		}
+		catch (object obj2)
+		{
+			obj = obj2;
+		}
+		if (e != null)
+		{
+			await e.DisposeAsync();
+		}
+		object obj3 = obj;
+		if (obj3 != null)
+		{
+			ExceptionDispatchInfo.Capture((obj3 as Exception) ?? throw obj3).Throw();
+		}
+		return sum;
+	}
+
+	public static async UniTask<double?> SumAsync(IUniTaskAsyncEnumerable<double?> source, CancellationToken cancellationToken)
+	{
+		double? sum = null;
+		IUniTaskAsyncEnumerator<double?> e = source.GetAsyncEnumerator(cancellationToken);
+		object obj = null;
+		try
+		{
+			while (await e.MoveNextAsync())
+			{
+				sum += e.Current.GetValueOrDefault();
+			}
+		}
+		catch (object obj2)
+		{
+			obj = obj2;
+		}
+		if (e != null)
+		{
+			await e.DisposeAsync();
+		}
+		object obj3 = obj;
+		if (obj3 != null)
+		{
+			ExceptionDispatchInfo.Capture((obj3 as Exception) ?? throw obj3).Throw();
+		}
+		return sum;
+	}
+
+	public static async UniTask<double?> SumAsync<TSource>(IUniTaskAsyncEnumerable<TSource> source, Func<TSource, double?> selector, CancellationToken cancellationToken)
+	{
+		double? sum = null;
+		IUniTaskAsyncEnumerator<TSource> e = source.GetAsyncEnumerator(cancellationToken);
+		object obj = null;
+		try
+		{
+			while (await e.MoveNextAsync())
+			{
+				sum += selector(e.Current).GetValueOrDefault();
+			}
+		}
+		catch (object obj2)
+		{
+			obj = obj2;
+		}
+		if (e != null)
+		{
+			await e.DisposeAsync();
+		}
+		object obj3 = obj;
+		if (obj3 != null)
+		{
+			ExceptionDispatchInfo.Capture((obj3 as Exception) ?? throw obj3).Throw();
+		}
+		return sum;
+	}
+
+	public static async UniTask<double?> SumAwaitAsync<TSource>(IUniTaskAsyncEnumerable<TSource> source, Func<TSource, UniTask<double?>> selector, CancellationToken cancellationToken)
+	{
+		double? sum = null;
+		IUniTaskAsyncEnumerator<TSource> e = source.GetAsyncEnumerator(cancellationToken);
+		object obj = null;
+		try
+		{
+			while (await e.MoveNextAsync())
+			{
+				sum += (await selector(e.Current)).GetValueOrDefault();
+			}
+		}
+		catch (object obj2)
+		{
+			obj = obj2;
+		}
+		if (e != null)
+		{
+			await e.DisposeAsync();
+		}
+		object obj3 = obj;
+		if (obj3 != null)
+		{
+			ExceptionDispatchInfo.Capture((obj3 as Exception) ?? throw obj3).Throw();
+		}
+		return sum;
+	}
+
+	public static async UniTask<double?> SumAwaitWithCancellationAsync<TSource>(IUniTaskAsyncEnumerable<TSource> source, Func<TSource, CancellationToken, UniTask<double?>> selector, CancellationToken cancellationToken)
+	{
+		double? sum = null;
+		IUniTaskAsyncEnumerator<TSource> e = source.GetAsyncEnumerator(cancellationToken);
+		object obj = null;
+		try
+		{
+			while (await e.MoveNextAsync())
+			{
+				sum += (await selector(e.Current, cancellationToken)).GetValueOrDefault();
+			}
+		}
+		catch (object obj2)
+		{
+			obj = obj2;
+		}
+		if (e != null)
+		{
+			await e.DisposeAsync();
+		}
+		object obj3 = obj;
+		if (obj3 != null)
+		{
+			ExceptionDispatchInfo.Capture((obj3 as Exception) ?? throw obj3).Throw();
+		}
+		return sum;
+	}
+
+	public static async UniTask<decimal?> SumAsync(IUniTaskAsyncEnumerable<decimal?> source, CancellationToken cancellationToken)
+	{
+		decimal? sum = null;
+		IUniTaskAsyncEnumerator<decimal?> e = source.GetAsyncEnumerator(cancellationToken);
+		object obj = null;
+		try
+		{
+			while (await e.MoveNextAsync())
+			{
+				sum += (decimal?)e.Current.GetValueOrDefault();
+			}
+		}
+		catch (object obj2)
+		{
+			obj = obj2;
+		}
+		if (e != null)
+		{
+			await e.DisposeAsync();
+		}
+		object obj3 = obj;
+		if (obj3 != null)
+		{
+			ExceptionDispatchInfo.Capture((obj3 as Exception) ?? throw obj3).Throw();
+		}
+		return sum;
+	}
+
+	public static async UniTask<decimal?> SumAsync<TSource>(IUniTaskAsyncEnumerable<TSource> source, Func<TSource, decimal?> selector, CancellationToken cancellationToken)
+	{
+		decimal? sum = null;
+		IUniTaskAsyncEnumerator<TSource> e = source.GetAsyncEnumerator(cancellationToken);
+		object obj = null;
+		try
+		{
+			while (await e.MoveNextAsync())
+			{
+				sum += (decimal?)selector(e.Current).GetValueOrDefault();
+			}
+		}
+		catch (object obj2)
+		{
+			obj = obj2;
+		}
+		if (e != null)
+		{
+			await e.DisposeAsync();
+		}
+		object obj3 = obj;
+		if (obj3 != null)
+		{
+			ExceptionDispatchInfo.Capture((obj3 as Exception) ?? throw obj3).Throw();
+		}
+		return sum;
+	}
+
+	public static async UniTask<decimal?> SumAwaitAsync<TSource>(IUniTaskAsyncEnumerable<TSource> source, Func<TSource, UniTask<decimal?>> selector, CancellationToken cancellationToken)
+	{
+		decimal? sum = null;
+		IUniTaskAsyncEnumerator<TSource> e = source.GetAsyncEnumerator(cancellationToken);
+		object obj = null;
+		try
+		{
+			while (await e.MoveNextAsync())
+			{
+				sum += (decimal?)(await selector(e.Current)).GetValueOrDefault();
+			}
+		}
+		catch (object obj2)
+		{
+			obj = obj2;
+		}
+		if (e != null)
+		{
+			await e.DisposeAsync();
+		}
+		object obj3 = obj;
+		if (obj3 != null)
+		{
+			ExceptionDispatchInfo.Capture((obj3 as Exception) ?? throw obj3).Throw();
+		}
+		return sum;
+	}
+
+	public static async UniTask<decimal?> SumAwaitWithCancellationAsync<TSource>(IUniTaskAsyncEnumerable<TSource> source, Func<TSource, CancellationToken, UniTask<decimal?>> selector, CancellationToken cancellationToken)
+	{
+		decimal? sum = null;
+		IUniTaskAsyncEnumerator<TSource> e = source.GetAsyncEnumerator(cancellationToken);
+		object obj = null;
+		try
+		{
+			while (await e.MoveNextAsync())
+			{
+				sum += (decimal?)(await selector(e.Current, cancellationToken)).GetValueOrDefault();
+			}
+		}
+		catch (object obj2)
+		{
+			obj = obj2;
+		}
+		if (e != null)
+		{
+			await e.DisposeAsync();
+		}
+		object obj3 = obj;
+		if (obj3 != null)
+		{
+			ExceptionDispatchInfo.Capture((obj3 as Exception) ?? throw obj3).Throw();
+		}
+		return sum;
 	}
 }

@@ -1,66 +1,90 @@
 using UnityEngine;
+using UnityEngine.Serialization;
 
-namespace FMODUnityResonance
+namespace FMODUnityResonance;
+
+[AddComponentMenu("ResonanceAudio/FmodResonanceAudioRoom")]
+public class FmodResonanceAudioRoom : MonoBehaviour
 {
-	public class FmodResonanceAudioRoom : MonoBehaviour
+	public enum SurfaceMaterial
 	{
-		/*
-		Dummy class. This could have happened for several reasons:
+		Transparent,
+		AcousticCeilingTiles,
+		BrickBare,
+		BrickPainted,
+		ConcreteBlockCoarse,
+		ConcreteBlockPainted,
+		CurtainHeavy,
+		FiberglassInsulation,
+		GlassThin,
+		GlassThick,
+		Grass,
+		LinoleumOnConcrete,
+		Marble,
+		Metal,
+		ParquetOnConcrete,
+		PlasterRough,
+		PlasterSmooth,
+		PlywoodPanel,
+		PolishedConcreteOrTile,
+		Sheetrock,
+		WaterOrIceSurface,
+		WoodCeiling,
+		WoodPanel
+	}
 
-		1. No dll files were provided to AssetRipper.
+	[FormerlySerializedAs("leftWall")]
+	public SurfaceMaterial LeftWall = SurfaceMaterial.ConcreteBlockCoarse;
 
-			Unity asset bundles and serialized files do not contain script information to decompile.
-				* For Mono games, that information is contained in .NET dll files.
-				* For Il2Cpp games, that information is contained in compiled C++ assemblies and the global metadata.
-				
-			AssetRipper usually expects games to conform to a normal file structure for Unity games of that platform.
-			A unexpected file structure could cause AssetRipper to not find the required files.
+	[FormerlySerializedAs("rightWall")]
+	public SurfaceMaterial RightWall = SurfaceMaterial.ConcreteBlockCoarse;
 
-		2. Incorrect dll files were provided to AssetRipper.
+	[FormerlySerializedAs("floor")]
+	public SurfaceMaterial Floor = SurfaceMaterial.ParquetOnConcrete;
 
-			Any of the following could cause this:
-				* Il2CppInterop assemblies
-				* Deobfuscated assemblies
-				* Older assemblies (compared to when the bundle was built)
-				* Newer assemblies (compared to when the bundle was built)
+	[FormerlySerializedAs("ceiling")]
+	public SurfaceMaterial Ceiling = SurfaceMaterial.PlasterRough;
 
-			Note: Although assembly publicizing is bad, it alone cannot cause empty scripts. See: https://github.com/AssetRipper/AssetRipper/issues/653
+	[FormerlySerializedAs("backWall")]
+	public SurfaceMaterial BackWall = SurfaceMaterial.ConcreteBlockCoarse;
 
-		3. Assembly Reconstruction has not been implemented.
+	[FormerlySerializedAs("frontWall")]
+	public SurfaceMaterial FrontWall = SurfaceMaterial.ConcreteBlockCoarse;
 
-			Asset bundles contain a small amount of information about the script content.
-			This information can be used to recover the serializable fields of a script.
+	[FormerlySerializedAs("reflectivity")]
+	public float Reflectivity = 1f;
 
-			See: https://github.com/AssetRipper/AssetRipper/issues/655
-	
-		4. This script is unnecessary.
+	[FormerlySerializedAs("reverbGainDb")]
+	public float ReverbGainDb;
 
-			If this script has no asset or script references, it can be deleted.
-			Be sure to resolve any compile errors before deleting because they can hide references.
+	[FormerlySerializedAs("reverbBrightness")]
+	public float ReverbBrightness;
 
-		5. Script Content Level 0
+	[FormerlySerializedAs("reverbTime")]
+	public float ReverbTime = 1f;
 
-			AssetRipper was set to not load any script information.
+	[FormerlySerializedAs("size")]
+	public Vector3 Size = Vector3.one;
 
-		6. Cpp2IL failed to decompile Il2Cpp data
+	private void OnEnable()
+	{
+		FmodResonanceAudio.UpdateAudioRoom(this, FmodResonanceAudio.IsListenerInsideRoom(this));
+	}
 
-			If this happened, there will be errors in the AssetRipper.log indicating that it happened.
-			This is an upstream problem, and the AssetRipper developer has very little control over it.
-			Please post a GitHub issue at: https://github.com/SamboyCoding/Cpp2IL/issues
+	private void OnDisable()
+	{
+		FmodResonanceAudio.UpdateAudioRoom(this, roomEnabled: false);
+	}
 
-		7. An incorrect path was provided to AssetRipper.
+	private void Update()
+	{
+		FmodResonanceAudio.UpdateAudioRoom(this, FmodResonanceAudio.IsListenerInsideRoom(this));
+	}
 
-			This is characterized by "Mixed game structure has been found at" in the AssetRipper.log file.
-			AssetRipper expects games to conform to a normal file structure for Unity games of that platform.
-			An unexpected file structure could cause AssetRipper to not find the required files for script decompilation.
-			Generally, AssetRipper expects users to provide the root folder of the game. For example:
-				* Windows: the folder containing the game's .exe file
-				* Mac: the .app file/folder
-				* Linux: the folder containing the game's executable file
-				* Android: the apk file
-				* iOS: the ipa file
-				* Switch: the folder containing exefs and romfs
-
-		*/
+	private void OnDrawGizmosSelected()
+	{
+		Gizmos.color = Color.yellow;
+		Gizmos.matrix = base.transform.localToWorldMatrix;
+		Gizmos.DrawWireCube(Vector3.zero, Size);
 	}
 }

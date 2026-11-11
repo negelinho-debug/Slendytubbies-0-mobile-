@@ -1,66 +1,274 @@
 using UnityEngine;
+using UnityEngine.UI;
+using UnityEngine.UIElements;
 
-namespace Unity.Collections.LowLevel.Unsafe.NotBurstCompatible
+namespace PrimeTween;
+
+internal static class Extensions
 {
-	public class Extensions : MonoBehaviour
+	internal static float CalcDistance(Vector3 v1, Vector3 v2)
 	{
-		/*
-		Dummy class. This could have happened for several reasons:
+		return Vector3.Distance(v1, v2);
+	}
 
-		1. No dll files were provided to AssetRipper.
+	internal static float CalcDistance(Quaternion q1, Quaternion q2)
+	{
+		return Quaternion.Angle(q1, q2);
+	}
 
-			Unity asset bundles and serialized files do not contain script information to decompile.
-				* For Mono games, that information is contained in .NET dll files.
-				* For Il2Cpp games, that information is contained in compiled C++ assemblies and the global metadata.
-				
-			AssetRipper usually expects games to conform to a normal file structure for Unity games of that platform.
-			A unexpected file structure could cause AssetRipper to not find the required files.
+	internal static float calcDelta(this float val, TweenAnimation.ValueWrapper prevVal)
+	{
+		return val - prevVal.single;
+	}
 
-		2. Incorrect dll files were provided to AssetRipper.
+	internal static double calcDelta(this double val, TweenAnimation.ValueWrapper prevVal)
+	{
+		return val - prevVal.DoubleVal;
+	}
 
-			Any of the following could cause this:
-				* Il2CppInterop assemblies
-				* Deobfuscated assemblies
-				* Older assemblies (compared to when the bundle was built)
-				* Newer assemblies (compared to when the bundle was built)
+	internal static Color calcDelta(this Color val, TweenAnimation.ValueWrapper prevVal)
+	{
+		return val - prevVal.color;
+	}
 
-			Note: Although assembly publicizing is bad, it alone cannot cause empty scripts. See: https://github.com/AssetRipper/AssetRipper/issues/653
+	internal static Vector2 calcDelta(this Vector2 val, TweenAnimation.ValueWrapper prevVal)
+	{
+		return val - prevVal.vector2;
+	}
 
-		3. Assembly Reconstruction has not been implemented.
+	internal static Vector3 calcDelta(this Vector3 val, TweenAnimation.ValueWrapper prevVal)
+	{
+		return val - prevVal.vector3;
+	}
 
-			Asset bundles contain a small amount of information about the script content.
-			This information can be used to recover the serializable fields of a script.
+	internal static Vector4 calcDelta(this Vector4 val, TweenAnimation.ValueWrapper prevVal)
+	{
+		return val - prevVal.vector4;
+	}
 
-			See: https://github.com/AssetRipper/AssetRipper/issues/655
-	
-		4. This script is unnecessary.
+	internal static Quaternion calcDelta(this Quaternion val, TweenAnimation.ValueWrapper prevVal)
+	{
+		return Quaternion.Inverse(prevVal.quaternion) * val;
+	}
 
-			If this script has no asset or script references, it can be deleted.
-			Be sure to resolve any compile errors before deleting because they can hide references.
+	internal static Rect calcDelta(this Rect val, TweenAnimation.ValueWrapper prevVal)
+	{
+		return new Rect(val.x - prevVal.x, val.y - prevVal.y, val.width - prevVal.z, val.height - prevVal.w);
+	}
 
-		5. Script Content Level 0
+	internal static Color WithAlpha(this Color c, float alpha)
+	{
+		c.a = alpha;
+		return c;
+	}
 
-			AssetRipper was set to not load any script information.
+	internal static TweenAnimation.ValueWrapper ToContainer(this float f)
+	{
+		return new TweenAnimation.ValueWrapper
+		{
+			single = f
+		};
+	}
 
-		6. Cpp2IL failed to decompile Il2Cpp data
+	internal static TweenAnimation.ValueWrapper ToContainer(this Vector2 v)
+	{
+		return new TweenAnimation.ValueWrapper
+		{
+			vector2 = v
+		};
+	}
 
-			If this happened, there will be errors in the AssetRipper.log indicating that it happened.
-			This is an upstream problem, and the AssetRipper developer has very little control over it.
-			Please post a GitHub issue at: https://github.com/SamboyCoding/Cpp2IL/issues
+	internal static TweenAnimation.ValueWrapper ToContainer(this Vector3 v)
+	{
+		return new TweenAnimation.ValueWrapper
+		{
+			vector3 = v
+		};
+	}
 
-		7. An incorrect path was provided to AssetRipper.
+	internal static TweenAnimation.ValueWrapper ToContainer(this Vector4 v)
+	{
+		return new TweenAnimation.ValueWrapper
+		{
+			vector4 = v
+		};
+	}
 
-			This is characterized by "Mixed game structure has been found at" in the AssetRipper.log file.
-			AssetRipper expects games to conform to a normal file structure for Unity games of that platform.
-			An unexpected file structure could cause AssetRipper to not find the required files for script decompilation.
-			Generally, AssetRipper expects users to provide the root folder of the game. For example:
-				* Windows: the folder containing the game's .exe file
-				* Mac: the .app file/folder
-				* Linux: the folder containing the game's executable file
-				* Android: the apk file
-				* iOS: the ipa file
-				* Switch: the folder containing exefs and romfs
+	internal static TweenAnimation.ValueWrapper XYToContainer(this Vector4 v)
+	{
+		return new TweenAnimation.ValueWrapper
+		{
+			vector2 = new Vector2(v.x, v.y)
+		};
+	}
 
-		*/
+	internal static TweenAnimation.ValueWrapper ZWToContainer(this Vector4 v)
+	{
+		return new TweenAnimation.ValueWrapper
+		{
+			vector2 = new Vector2(v.z, v.w)
+		};
+	}
+
+	internal static TweenAnimation.ValueWrapper ToContainer(this Color c)
+	{
+		return new TweenAnimation.ValueWrapper
+		{
+			color = c
+		};
+	}
+
+	internal static TweenAnimation.ValueWrapper ToContainer(this Quaternion q)
+	{
+		return new TweenAnimation.ValueWrapper
+		{
+			quaternion = q
+		};
+	}
+
+	internal static TweenAnimation.ValueWrapper ToContainer(this Rect r)
+	{
+		return new TweenAnimation.ValueWrapper
+		{
+			rect = r
+		};
+	}
+
+	internal static TweenAnimation.ValueWrapper ToContainer(this double d)
+	{
+		return new TweenAnimation.ValueWrapper
+		{
+			DoubleVal = d
+		};
+	}
+
+	internal static Vector2 WithComponent(this Vector2 v, int index, float val)
+	{
+		v[index] = val;
+		return v;
+	}
+
+	internal static Vector3 WithComponent(this Vector3 v, int index, float val)
+	{
+		v[index] = val;
+		return v;
+	}
+
+	internal static Vector2 GetFlexibleSize(this LayoutElement target)
+	{
+		return new Vector2(target.flexibleWidth, target.flexibleHeight);
+	}
+
+	internal static void SetFlexibleSize(this LayoutElement target, Vector2 vector2)
+	{
+		target.flexibleWidth = vector2.x;
+		target.flexibleHeight = vector2.y;
+	}
+
+	internal static Vector2 GetMinSize(this LayoutElement target)
+	{
+		return new Vector2(target.minWidth, target.minHeight);
+	}
+
+	internal static void SetMinSize(this LayoutElement target, Vector2 vector2)
+	{
+		target.minWidth = vector2.x;
+		target.minHeight = vector2.y;
+	}
+
+	internal static Vector2 GetPreferredSize(this LayoutElement target)
+	{
+		return new Vector2(target.preferredWidth, target.preferredHeight);
+	}
+
+	internal static void SetPreferredSize(this LayoutElement target, Vector2 vector2)
+	{
+		target.preferredWidth = vector2.x;
+		target.preferredHeight = vector2.y;
+	}
+
+	internal static Vector2 GetNormalizedPosition(this ScrollRect target)
+	{
+		return new Vector2(target.horizontalNormalizedPosition, target.verticalNormalizedPosition);
+	}
+
+	internal static void SetNormalizedPosition(this ScrollRect target, Vector2 vector2)
+	{
+		target.horizontalNormalizedPosition = vector2.x;
+		target.verticalNormalizedPosition = vector2.y;
+	}
+
+	internal static Vector2 GetTopLeft(this VisualElement e)
+	{
+		IResolvedStyle resolvedStyle = e.resolvedStyle;
+		return new Vector2(resolvedStyle.left, resolvedStyle.top);
+	}
+
+	internal static void SetTopLeft(this VisualElement e, Vector2 c)
+	{
+		IStyle style = e.style;
+		style.left = c.x;
+		style.top = c.y;
+	}
+
+	internal static Rect GetResolvedStyleRect(this VisualElement e)
+	{
+		IResolvedStyle resolvedStyle = e.resolvedStyle;
+		return new Rect(resolvedStyle.left, resolvedStyle.top, resolvedStyle.width, resolvedStyle.height);
+	}
+
+	internal static void SetStyleRect(this VisualElement e, Rect c)
+	{
+		IStyle style = e.style;
+		style.left = c.x;
+		style.top = c.y;
+		style.width = c.width;
+		style.height = c.height;
+	}
+
+	private static bool TryGetPropertyBlock(object target, out MaterialPropertyBlock result)
+	{
+		Renderer renderer = target as Renderer;
+		if (renderer.HasPropertyBlock())
+		{
+			result = PrimeTweenManager.Instance.materialPropertyBlockForGetter;
+			renderer.GetPropertyBlock(result);
+			return true;
+		}
+		result = null;
+		return false;
+	}
+
+	internal static bool TryGetPropertyBlockColor(object target, int propId, out Color result)
+	{
+		if (TryGetPropertyBlock(target, out var result2) && result2.HasColor(propId))
+		{
+			result = result2.GetColor(propId);
+			return true;
+		}
+		result = default(Color);
+		return false;
+	}
+
+	internal static bool TryGetPropertyBlockVector(object target, int propId, out Vector4 result)
+	{
+		if (TryGetPropertyBlock(target, out var result2) && result2.HasVector(propId))
+		{
+			result = result2.GetVector(propId);
+			return true;
+		}
+		result = default(Vector4);
+		return false;
+	}
+
+	internal static bool TryGetPropertyBlockFloat(object target, int propId, out float result)
+	{
+		if (TryGetPropertyBlock(target, out var result2) && result2.HasFloat(propId))
+		{
+			result = result2.GetFloat(propId);
+			return true;
+		}
+		result = 0f;
+		return false;
 	}
 }

@@ -1,66 +1,124 @@
-using UnityEngine;
+using System;
+using System.Threading;
 
-namespace Cysharp.Threading.Tasks
+namespace Cysharp.Threading.Tasks;
+
+public abstract class PlayerLoopTimer : IDisposable, IPlayerLoopItem
 {
-	public class PlayerLoopTimer : MonoBehaviour
+	private readonly CancellationToken cancellationToken;
+
+	private readonly Action<object> timerCallback;
+
+	private readonly object state;
+
+	private readonly PlayerLoopTiming playerLoopTiming;
+
+	private readonly bool periodic;
+
+	private bool isRunning;
+
+	private bool tryStop;
+
+	private bool isDisposed;
+
+	protected PlayerLoopTimer(bool periodic, PlayerLoopTiming playerLoopTiming, CancellationToken cancellationToken, Action<object> timerCallback, object state)
 	{
-		/*
-		Dummy class. This could have happened for several reasons:
-
-		1. No dll files were provided to AssetRipper.
-
-			Unity asset bundles and serialized files do not contain script information to decompile.
-				* For Mono games, that information is contained in .NET dll files.
-				* For Il2Cpp games, that information is contained in compiled C++ assemblies and the global metadata.
-				
-			AssetRipper usually expects games to conform to a normal file structure for Unity games of that platform.
-			A unexpected file structure could cause AssetRipper to not find the required files.
-
-		2. Incorrect dll files were provided to AssetRipper.
-
-			Any of the following could cause this:
-				* Il2CppInterop assemblies
-				* Deobfuscated assemblies
-				* Older assemblies (compared to when the bundle was built)
-				* Newer assemblies (compared to when the bundle was built)
-
-			Note: Although assembly publicizing is bad, it alone cannot cause empty scripts. See: https://github.com/AssetRipper/AssetRipper/issues/653
-
-		3. Assembly Reconstruction has not been implemented.
-
-			Asset bundles contain a small amount of information about the script content.
-			This information can be used to recover the serializable fields of a script.
-
-			See: https://github.com/AssetRipper/AssetRipper/issues/655
-	
-		4. This script is unnecessary.
-
-			If this script has no asset or script references, it can be deleted.
-			Be sure to resolve any compile errors before deleting because they can hide references.
-
-		5. Script Content Level 0
-
-			AssetRipper was set to not load any script information.
-
-		6. Cpp2IL failed to decompile Il2Cpp data
-
-			If this happened, there will be errors in the AssetRipper.log indicating that it happened.
-			This is an upstream problem, and the AssetRipper developer has very little control over it.
-			Please post a GitHub issue at: https://github.com/SamboyCoding/Cpp2IL/issues
-
-		7. An incorrect path was provided to AssetRipper.
-
-			This is characterized by "Mixed game structure has been found at" in the AssetRipper.log file.
-			AssetRipper expects games to conform to a normal file structure for Unity games of that platform.
-			An unexpected file structure could cause AssetRipper to not find the required files for script decompilation.
-			Generally, AssetRipper expects users to provide the root folder of the game. For example:
-				* Windows: the folder containing the game's .exe file
-				* Mac: the .app file/folder
-				* Linux: the folder containing the game's executable file
-				* Android: the apk file
-				* iOS: the ipa file
-				* Switch: the folder containing exefs and romfs
-
-		*/
+		this.periodic = periodic;
+		this.playerLoopTiming = playerLoopTiming;
+		this.cancellationToken = cancellationToken;
+		this.timerCallback = timerCallback;
+		this.state = state;
 	}
+
+	public static PlayerLoopTimer Create(TimeSpan interval, bool periodic, DelayType delayType, PlayerLoopTiming playerLoopTiming, CancellationToken cancellationToken, Action<object> timerCallback, object state)
+	{
+		return delayType switch
+		{
+			DelayType.UnscaledDeltaTime => new IgnoreTimeScalePlayerLoopTimer(interval, periodic, playerLoopTiming, cancellationToken, timerCallback, state), 
+			DelayType.Realtime => new RealtimePlayerLoopTimer(interval, periodic, playerLoopTiming, cancellationToken, timerCallback, state), 
+			_ => new DeltaTimePlayerLoopTimer(interval, periodic, playerLoopTiming, cancellationToken, timerCallback, state), 
+		};
+	}
+
+	public static PlayerLoopTimer StartNew(TimeSpan interval, bool periodic, DelayType delayType, PlayerLoopTiming playerLoopTiming, CancellationToken cancellationToken, Action<object> timerCallback, object state)
+	{
+		PlayerLoopTimer playerLoopTimer = Create(interval, periodic, delayType, playerLoopTiming, cancellationToken, timerCallback, state);
+		playerLoopTimer.Restart();
+		return playerLoopTimer;
+	}
+
+	public void Restart()
+	{
+		if (isDisposed)
+		{
+			throw new ObjectDisposedException(null);
+		}
+		ResetCore(null);
+		if (!isRunning)
+		{
+			isRunning = true;
+			PlayerLoopHelper.AddAction(playerLoopTiming, this);
+		}
+		tryStop = false;
+	}
+
+	public void Restart(TimeSpan interval)
+	{
+		if (isDisposed)
+		{
+			throw new ObjectDisposedException(null);
+		}
+		ResetCore(interval);
+		if (!isRunning)
+		{
+			isRunning = true;
+			PlayerLoopHelper.AddAction(playerLoopTiming, this);
+		}
+		tryStop = false;
+	}
+
+	public void Stop()
+	{
+		tryStop = true;
+	}
+
+	protected abstract void ResetCore(TimeSpan? newInterval);
+
+	public void Dispose()
+	{
+		isDisposed = true;
+	}
+
+	bool IPlayerLoopItem.MoveNext()
+	{
+		if (isDisposed)
+		{
+			isRunning = false;
+			return false;
+		}
+		if (tryStop)
+		{
+			isRunning = false;
+			return false;
+		}
+		if (cancellationToken.IsCancellationRequested)
+		{
+			isRunning = false;
+			return false;
+		}
+		if (!MoveNextCore())
+		{
+			timerCallback(state);
+			if (periodic)
+			{
+				ResetCore(null);
+				return true;
+			}
+			isRunning = false;
+			return false;
+		}
+		return true;
+	}
+
+	protected abstract bool MoveNextCore();
 }

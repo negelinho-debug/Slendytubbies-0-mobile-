@@ -1,0 +1,9 @@
+Records - original gameplay script recovery, Fix 2
+Original decompiled C# files: 1153
+Dummy scripts examined: 1181
+Newly restored: 138
+Still unresolved: 1043
+Terminal-related code files found: 6
+Unresolved count does not necessarily equal missing gameplay scripts.
+Scenes, animations, controls, and terminal are not verified.
+This is not an iOS build.

@@ -1,66 +1,395 @@
+using System;
+using System.Runtime.ExceptionServices;
+using System.Threading;
+using TMPro;
 using UnityEngine;
 
-namespace Cysharp.Threading.Tasks
+namespace Cysharp.Threading.Tasks;
+
+public static class TextMeshProAsyncExtensions
 {
-	public class TextMeshProAsyncExtensions : MonoBehaviour
+	public static void BindTo(this IUniTaskAsyncEnumerable<string> source, TMP_Text text, bool rebindOnError = true)
 	{
-		/*
-		Dummy class. This could have happened for several reasons:
+		BindToCore(source, text, ((MonoBehaviour)(object)text).GetCancellationTokenOnDestroy(), rebindOnError).Forget();
+	}
 
-		1. No dll files were provided to AssetRipper.
+	public static void BindTo(this IUniTaskAsyncEnumerable<string> source, TMP_Text text, CancellationToken cancellationToken, bool rebindOnError = true)
+	{
+		BindToCore(source, text, cancellationToken, rebindOnError).Forget();
+	}
 
-			Unity asset bundles and serialized files do not contain script information to decompile.
-				* For Mono games, that information is contained in .NET dll files.
-				* For Il2Cpp games, that information is contained in compiled C++ assemblies and the global metadata.
-				
-			AssetRipper usually expects games to conform to a normal file structure for Unity games of that platform.
-			A unexpected file structure could cause AssetRipper to not find the required files.
+	private static async UniTaskVoid BindToCore(IUniTaskAsyncEnumerable<string> source, TMP_Text text, CancellationToken cancellationToken, bool rebindOnError)
+	{
+		bool repeat = false;
+		object obj3;
+		while (true)
+		{
+			IUniTaskAsyncEnumerator<string> e = source.GetAsyncEnumerator(cancellationToken);
+			object obj = null;
+			int num = 0;
+			try
+			{
+				while (true)
+				{
+					bool flag;
+					try
+					{
+						flag = await e.MoveNextAsync();
+						repeat = false;
+					}
+					catch (Exception ex)
+					{
+						if (ex is OperationCanceledException)
+						{
+							goto IL_00fc;
+						}
+						if (rebindOnError && !repeat)
+						{
+							repeat = true;
+							goto IL_00f3;
+						}
+						throw;
+					}
+					if (flag)
+					{
+						text.text = e.Current;
+						continue;
+					}
+					goto IL_00fc;
+					IL_00f3:
+					num = 1;
+					break;
+					IL_00fc:
+					num = 2;
+					break;
+				}
+			}
+			catch (object obj2)
+			{
+				obj = obj2;
+			}
+			if (e != null)
+			{
+				await e.DisposeAsync();
+			}
+			obj3 = obj;
+			if (obj3 != null)
+			{
+				Exception obj4 = obj3 as Exception;
+				if (obj4 == null)
+				{
+					break;
+				}
+				ExceptionDispatchInfo.Capture(obj4).Throw();
+			}
+			switch (num)
+			{
+			case 1:
+				break;
+			default:
+				return;
+			}
+		}
+		throw obj3;
+	}
 
-		2. Incorrect dll files were provided to AssetRipper.
+	public static void BindTo<T>(this IUniTaskAsyncEnumerable<T> source, TMP_Text text, bool rebindOnError = true)
+	{
+		BindToCore(source, text, ((MonoBehaviour)(object)text).GetCancellationTokenOnDestroy(), rebindOnError).Forget();
+	}
 
-			Any of the following could cause this:
-				* Il2CppInterop assemblies
-				* Deobfuscated assemblies
-				* Older assemblies (compared to when the bundle was built)
-				* Newer assemblies (compared to when the bundle was built)
+	public static void BindTo<T>(this IUniTaskAsyncEnumerable<T> source, TMP_Text text, CancellationToken cancellationToken, bool rebindOnError = true)
+	{
+		BindToCore(source, text, cancellationToken, rebindOnError).Forget();
+	}
 
-			Note: Although assembly publicizing is bad, it alone cannot cause empty scripts. See: https://github.com/AssetRipper/AssetRipper/issues/653
+	public static void BindTo<T>(this AsyncReactiveProperty<T> source, TMP_Text text, bool rebindOnError = true)
+	{
+		BindToCore(source, text, ((MonoBehaviour)(object)text).GetCancellationTokenOnDestroy(), rebindOnError).Forget();
+	}
 
-		3. Assembly Reconstruction has not been implemented.
+	private static async UniTaskVoid BindToCore<T>(IUniTaskAsyncEnumerable<T> source, TMP_Text text, CancellationToken cancellationToken, bool rebindOnError)
+	{
+		bool repeat = false;
+		object obj3;
+		while (true)
+		{
+			IUniTaskAsyncEnumerator<T> e = source.GetAsyncEnumerator(cancellationToken);
+			object obj = null;
+			int num = 0;
+			try
+			{
+				while (true)
+				{
+					bool flag;
+					try
+					{
+						flag = await e.MoveNextAsync();
+						repeat = false;
+					}
+					catch (Exception ex)
+					{
+						if (ex is OperationCanceledException)
+						{
+							goto IL_010b;
+						}
+						if (rebindOnError && !repeat)
+						{
+							repeat = true;
+							goto IL_0102;
+						}
+						throw;
+					}
+					if (flag)
+					{
+						text.text = e.Current.ToString();
+						continue;
+					}
+					goto IL_010b;
+					IL_0102:
+					num = 1;
+					break;
+					IL_010b:
+					num = 2;
+					break;
+				}
+			}
+			catch (object obj2)
+			{
+				obj = obj2;
+			}
+			if (e != null)
+			{
+				await e.DisposeAsync();
+			}
+			obj3 = obj;
+			if (obj3 != null)
+			{
+				Exception obj4 = obj3 as Exception;
+				if (obj4 == null)
+				{
+					break;
+				}
+				ExceptionDispatchInfo.Capture(obj4).Throw();
+			}
+			switch (num)
+			{
+			case 1:
+				break;
+			default:
+				return;
+			}
+		}
+		throw obj3;
+	}
 
-			Asset bundles contain a small amount of information about the script content.
-			This information can be used to recover the serializable fields of a script.
+	public static IAsyncValueChangedEventHandler<string> GetAsyncValueChangedEventHandler(this TMP_InputField inputField)
+	{
+		return new AsyncUnityEventHandler<string>(inputField.onValueChanged, ((MonoBehaviour)(object)inputField).GetCancellationTokenOnDestroy(), callOnce: false);
+	}
 
-			See: https://github.com/AssetRipper/AssetRipper/issues/655
-	
-		4. This script is unnecessary.
+	public static IAsyncValueChangedEventHandler<string> GetAsyncValueChangedEventHandler(this TMP_InputField inputField, CancellationToken cancellationToken)
+	{
+		return new AsyncUnityEventHandler<string>(inputField.onValueChanged, cancellationToken, callOnce: false);
+	}
 
-			If this script has no asset or script references, it can be deleted.
-			Be sure to resolve any compile errors before deleting because they can hide references.
+	public static UniTask<string> OnValueChangedAsync(this TMP_InputField inputField)
+	{
+		return new AsyncUnityEventHandler<string>(inputField.onValueChanged, ((MonoBehaviour)(object)inputField).GetCancellationTokenOnDestroy(), callOnce: true).OnInvokeAsync();
+	}
 
-		5. Script Content Level 0
+	public static UniTask<string> OnValueChangedAsync(this TMP_InputField inputField, CancellationToken cancellationToken)
+	{
+		return new AsyncUnityEventHandler<string>(inputField.onValueChanged, cancellationToken, callOnce: true).OnInvokeAsync();
+	}
 
-			AssetRipper was set to not load any script information.
+	public static IUniTaskAsyncEnumerable<string> OnValueChangedAsAsyncEnumerable(this TMP_InputField inputField)
+	{
+		return new UnityEventHandlerAsyncEnumerable<string>(inputField.onValueChanged, ((MonoBehaviour)(object)inputField).GetCancellationTokenOnDestroy());
+	}
 
-		6. Cpp2IL failed to decompile Il2Cpp data
+	public static IUniTaskAsyncEnumerable<string> OnValueChangedAsAsyncEnumerable(this TMP_InputField inputField, CancellationToken cancellationToken)
+	{
+		return new UnityEventHandlerAsyncEnumerable<string>(inputField.onValueChanged, cancellationToken);
+	}
 
-			If this happened, there will be errors in the AssetRipper.log indicating that it happened.
-			This is an upstream problem, and the AssetRipper developer has very little control over it.
-			Please post a GitHub issue at: https://github.com/SamboyCoding/Cpp2IL/issues
+	public static IAsyncEndEditEventHandler<string> GetAsyncEndEditEventHandler(this TMP_InputField inputField)
+	{
+		return new AsyncUnityEventHandler<string>(inputField.onEndEdit, ((MonoBehaviour)(object)inputField).GetCancellationTokenOnDestroy(), callOnce: false);
+	}
 
-		7. An incorrect path was provided to AssetRipper.
+	public static IAsyncEndEditEventHandler<string> GetAsyncEndEditEventHandler(this TMP_InputField inputField, CancellationToken cancellationToken)
+	{
+		return new AsyncUnityEventHandler<string>(inputField.onEndEdit, cancellationToken, callOnce: false);
+	}
 
-			This is characterized by "Mixed game structure has been found at" in the AssetRipper.log file.
-			AssetRipper expects games to conform to a normal file structure for Unity games of that platform.
-			An unexpected file structure could cause AssetRipper to not find the required files for script decompilation.
-			Generally, AssetRipper expects users to provide the root folder of the game. For example:
-				* Windows: the folder containing the game's .exe file
-				* Mac: the .app file/folder
-				* Linux: the folder containing the game's executable file
-				* Android: the apk file
-				* iOS: the ipa file
-				* Switch: the folder containing exefs and romfs
+	public static UniTask<string> OnEndEditAsync(this TMP_InputField inputField)
+	{
+		return new AsyncUnityEventHandler<string>(inputField.onEndEdit, ((MonoBehaviour)(object)inputField).GetCancellationTokenOnDestroy(), callOnce: true).OnInvokeAsync();
+	}
 
-		*/
+	public static UniTask<string> OnEndEditAsync(this TMP_InputField inputField, CancellationToken cancellationToken)
+	{
+		return new AsyncUnityEventHandler<string>(inputField.onEndEdit, cancellationToken, callOnce: true).OnInvokeAsync();
+	}
+
+	public static IUniTaskAsyncEnumerable<string> OnEndEditAsAsyncEnumerable(this TMP_InputField inputField)
+	{
+		return new UnityEventHandlerAsyncEnumerable<string>(inputField.onEndEdit, ((MonoBehaviour)(object)inputField).GetCancellationTokenOnDestroy());
+	}
+
+	public static IUniTaskAsyncEnumerable<string> OnEndEditAsAsyncEnumerable(this TMP_InputField inputField, CancellationToken cancellationToken)
+	{
+		return new UnityEventHandlerAsyncEnumerable<string>(inputField.onEndEdit, cancellationToken);
+	}
+
+	public static IAsyncEndTextSelectionEventHandler<(string, int, int)> GetAsyncEndTextSelectionEventHandler(this TMP_InputField inputField)
+	{
+		return new AsyncUnityEventHandler<(string, int, int)>(new TextSelectionEventConverter(inputField.onEndTextSelection), ((MonoBehaviour)(object)inputField).GetCancellationTokenOnDestroy(), callOnce: false);
+	}
+
+	public static IAsyncEndTextSelectionEventHandler<(string, int, int)> GetAsyncEndTextSelectionEventHandler(this TMP_InputField inputField, CancellationToken cancellationToken)
+	{
+		return new AsyncUnityEventHandler<(string, int, int)>(new TextSelectionEventConverter(inputField.onEndTextSelection), cancellationToken, callOnce: false);
+	}
+
+	public static UniTask<(string, int, int)> OnEndTextSelectionAsync(this TMP_InputField inputField)
+	{
+		return new AsyncUnityEventHandler<(string, int, int)>(new TextSelectionEventConverter(inputField.onEndTextSelection), ((MonoBehaviour)(object)inputField).GetCancellationTokenOnDestroy(), callOnce: true).OnInvokeAsync();
+	}
+
+	public static UniTask<(string, int, int)> OnEndTextSelectionAsync(this TMP_InputField inputField, CancellationToken cancellationToken)
+	{
+		return new AsyncUnityEventHandler<(string, int, int)>(new TextSelectionEventConverter(inputField.onEndTextSelection), cancellationToken, callOnce: true).OnInvokeAsync();
+	}
+
+	public static IUniTaskAsyncEnumerable<(string, int, int)> OnEndTextSelectionAsAsyncEnumerable(this TMP_InputField inputField)
+	{
+		return new UnityEventHandlerAsyncEnumerable<(string, int, int)>(new TextSelectionEventConverter(inputField.onEndTextSelection), ((MonoBehaviour)(object)inputField).GetCancellationTokenOnDestroy());
+	}
+
+	public static IUniTaskAsyncEnumerable<(string, int, int)> OnEndTextSelectionAsAsyncEnumerable(this TMP_InputField inputField, CancellationToken cancellationToken)
+	{
+		return new UnityEventHandlerAsyncEnumerable<(string, int, int)>(new TextSelectionEventConverter(inputField.onEndTextSelection), cancellationToken);
+	}
+
+	public static IAsyncTextSelectionEventHandler<(string, int, int)> GetAsyncTextSelectionEventHandler(this TMP_InputField inputField)
+	{
+		return new AsyncUnityEventHandler<(string, int, int)>(new TextSelectionEventConverter(inputField.onTextSelection), ((MonoBehaviour)(object)inputField).GetCancellationTokenOnDestroy(), callOnce: false);
+	}
+
+	public static IAsyncTextSelectionEventHandler<(string, int, int)> GetAsyncTextSelectionEventHandler(this TMP_InputField inputField, CancellationToken cancellationToken)
+	{
+		return new AsyncUnityEventHandler<(string, int, int)>(new TextSelectionEventConverter(inputField.onTextSelection), cancellationToken, callOnce: false);
+	}
+
+	public static UniTask<(string, int, int)> OnTextSelectionAsync(this TMP_InputField inputField)
+	{
+		return new AsyncUnityEventHandler<(string, int, int)>(new TextSelectionEventConverter(inputField.onTextSelection), ((MonoBehaviour)(object)inputField).GetCancellationTokenOnDestroy(), callOnce: true).OnInvokeAsync();
+	}
+
+	public static UniTask<(string, int, int)> OnTextSelectionAsync(this TMP_InputField inputField, CancellationToken cancellationToken)
+	{
+		return new AsyncUnityEventHandler<(string, int, int)>(new TextSelectionEventConverter(inputField.onTextSelection), cancellationToken, callOnce: true).OnInvokeAsync();
+	}
+
+	public static IUniTaskAsyncEnumerable<(string, int, int)> OnTextSelectionAsAsyncEnumerable(this TMP_InputField inputField)
+	{
+		return new UnityEventHandlerAsyncEnumerable<(string, int, int)>(new TextSelectionEventConverter(inputField.onTextSelection), ((MonoBehaviour)(object)inputField).GetCancellationTokenOnDestroy());
+	}
+
+	public static IUniTaskAsyncEnumerable<(string, int, int)> OnTextSelectionAsAsyncEnumerable(this TMP_InputField inputField, CancellationToken cancellationToken)
+	{
+		return new UnityEventHandlerAsyncEnumerable<(string, int, int)>(new TextSelectionEventConverter(inputField.onTextSelection), cancellationToken);
+	}
+
+	public static IAsyncDeselectEventHandler<string> GetAsyncDeselectEventHandler(this TMP_InputField inputField)
+	{
+		return new AsyncUnityEventHandler<string>(inputField.onDeselect, ((MonoBehaviour)(object)inputField).GetCancellationTokenOnDestroy(), callOnce: false);
+	}
+
+	public static IAsyncDeselectEventHandler<string> GetAsyncDeselectEventHandler(this TMP_InputField inputField, CancellationToken cancellationToken)
+	{
+		return new AsyncUnityEventHandler<string>(inputField.onDeselect, cancellationToken, callOnce: false);
+	}
+
+	public static UniTask<string> OnDeselectAsync(this TMP_InputField inputField)
+	{
+		return new AsyncUnityEventHandler<string>(inputField.onDeselect, ((MonoBehaviour)(object)inputField).GetCancellationTokenOnDestroy(), callOnce: true).OnInvokeAsync();
+	}
+
+	public static UniTask<string> OnDeselectAsync(this TMP_InputField inputField, CancellationToken cancellationToken)
+	{
+		return new AsyncUnityEventHandler<string>(inputField.onDeselect, cancellationToken, callOnce: true).OnInvokeAsync();
+	}
+
+	public static IUniTaskAsyncEnumerable<string> OnDeselectAsAsyncEnumerable(this TMP_InputField inputField)
+	{
+		return new UnityEventHandlerAsyncEnumerable<string>(inputField.onDeselect, ((MonoBehaviour)(object)inputField).GetCancellationTokenOnDestroy());
+	}
+
+	public static IUniTaskAsyncEnumerable<string> OnDeselectAsAsyncEnumerable(this TMP_InputField inputField, CancellationToken cancellationToken)
+	{
+		return new UnityEventHandlerAsyncEnumerable<string>(inputField.onDeselect, cancellationToken);
+	}
+
+	public static IAsyncSelectEventHandler<string> GetAsyncSelectEventHandler(this TMP_InputField inputField)
+	{
+		return new AsyncUnityEventHandler<string>(inputField.onSelect, ((MonoBehaviour)(object)inputField).GetCancellationTokenOnDestroy(), callOnce: false);
+	}
+
+	public static IAsyncSelectEventHandler<string> GetAsyncSelectEventHandler(this TMP_InputField inputField, CancellationToken cancellationToken)
+	{
+		return new AsyncUnityEventHandler<string>(inputField.onSelect, cancellationToken, callOnce: false);
+	}
+
+	public static UniTask<string> OnSelectAsync(this TMP_InputField inputField)
+	{
+		return new AsyncUnityEventHandler<string>(inputField.onSelect, ((MonoBehaviour)(object)inputField).GetCancellationTokenOnDestroy(), callOnce: true).OnInvokeAsync();
+	}
+
+	public static UniTask<string> OnSelectAsync(this TMP_InputField inputField, CancellationToken cancellationToken)
+	{
+		return new AsyncUnityEventHandler<string>(inputField.onSelect, cancellationToken, callOnce: true).OnInvokeAsync();
+	}
+
+	public static IUniTaskAsyncEnumerable<string> OnSelectAsAsyncEnumerable(this TMP_InputField inputField)
+	{
+		return new UnityEventHandlerAsyncEnumerable<string>(inputField.onSelect, ((MonoBehaviour)(object)inputField).GetCancellationTokenOnDestroy());
+	}
+
+	public static IUniTaskAsyncEnumerable<string> OnSelectAsAsyncEnumerable(this TMP_InputField inputField, CancellationToken cancellationToken)
+	{
+		return new UnityEventHandlerAsyncEnumerable<string>(inputField.onSelect, cancellationToken);
+	}
+
+	public static IAsyncSubmitEventHandler<string> GetAsyncSubmitEventHandler(this TMP_InputField inputField)
+	{
+		return new AsyncUnityEventHandler<string>(inputField.onSubmit, ((MonoBehaviour)(object)inputField).GetCancellationTokenOnDestroy(), callOnce: false);
+	}
+
+	public static IAsyncSubmitEventHandler<string> GetAsyncSubmitEventHandler(this TMP_InputField inputField, CancellationToken cancellationToken)
+	{
+		return new AsyncUnityEventHandler<string>(inputField.onSubmit, cancellationToken, callOnce: false);
+	}
+
+	public static UniTask<string> OnSubmitAsync(this TMP_InputField inputField)
+	{
+		return new AsyncUnityEventHandler<string>(inputField.onSubmit, ((MonoBehaviour)(object)inputField).GetCancellationTokenOnDestroy(), callOnce: true).OnInvokeAsync();
+	}
+
+	public static UniTask<string> OnSubmitAsync(this TMP_InputField inputField, CancellationToken cancellationToken)
+	{
+		return new AsyncUnityEventHandler<string>(inputField.onSubmit, cancellationToken, callOnce: true).OnInvokeAsync();
+	}
+
+	public static IUniTaskAsyncEnumerable<string> OnSubmitAsAsyncEnumerable(this TMP_InputField inputField)
+	{
+		return new UnityEventHandlerAsyncEnumerable<string>(inputField.onSubmit, ((MonoBehaviour)(object)inputField).GetCancellationTokenOnDestroy());
+	}
+
+	public static IUniTaskAsyncEnumerable<string> OnSubmitAsAsyncEnumerable(this TMP_InputField inputField, CancellationToken cancellationToken)
+	{
+		return new UnityEventHandlerAsyncEnumerable<string>(inputField.onSubmit, cancellationToken);
 	}
 }

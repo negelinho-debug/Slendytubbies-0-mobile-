@@ -1,66 +1,250 @@
+using System;
+using System.Diagnostics;
 using UnityEngine;
 
-namespace Cysharp.Threading.Tasks.Internal
+namespace Cysharp.Threading.Tasks.Internal;
+
+internal sealed class PlayerLoopRunner
 {
-	public class PlayerLoopRunner : MonoBehaviour
+	private const int InitialSize = 16;
+
+	private readonly PlayerLoopTiming timing;
+
+	private readonly object runningAndQueueLock = new object();
+
+	private readonly object arrayLock = new object();
+
+	private readonly Action<Exception> unhandledExceptionCallback;
+
+	private int tail;
+
+	private bool running;
+
+	private IPlayerLoopItem[] loopItems = new IPlayerLoopItem[16];
+
+	private MinimumQueue<IPlayerLoopItem> waitQueue = new MinimumQueue<IPlayerLoopItem>(16);
+
+	public PlayerLoopRunner(PlayerLoopTiming timing)
 	{
-		/*
-		Dummy class. This could have happened for several reasons:
+		unhandledExceptionCallback = delegate(Exception ex)
+		{
+			UnityEngine.Debug.LogException(ex);
+		};
+		this.timing = timing;
+	}
 
-		1. No dll files were provided to AssetRipper.
+	public void AddAction(IPlayerLoopItem item)
+	{
+		lock (runningAndQueueLock)
+		{
+			if (running)
+			{
+				waitQueue.Enqueue(item);
+				return;
+			}
+		}
+		lock (arrayLock)
+		{
+			if (loopItems.Length == tail)
+			{
+				Array.Resize(ref loopItems, checked(tail * 2));
+			}
+			loopItems[tail++] = item;
+		}
+	}
 
-			Unity asset bundles and serialized files do not contain script information to decompile.
-				* For Mono games, that information is contained in .NET dll files.
-				* For Il2Cpp games, that information is contained in compiled C++ assemblies and the global metadata.
-				
-			AssetRipper usually expects games to conform to a normal file structure for Unity games of that platform.
-			A unexpected file structure could cause AssetRipper to not find the required files.
+	public int Clear()
+	{
+		lock (arrayLock)
+		{
+			int num = 0;
+			for (int i = 0; i < loopItems.Length; i++)
+			{
+				if (loopItems[i] != null)
+				{
+					num++;
+				}
+				loopItems[i] = null;
+			}
+			tail = 0;
+			return num;
+		}
+	}
 
-		2. Incorrect dll files were provided to AssetRipper.
+	public void Run()
+	{
+		RunCore();
+	}
 
-			Any of the following could cause this:
-				* Il2CppInterop assemblies
-				* Deobfuscated assemblies
-				* Older assemblies (compared to when the bundle was built)
-				* Newer assemblies (compared to when the bundle was built)
+	private void Initialization()
+	{
+		RunCore();
+	}
 
-			Note: Although assembly publicizing is bad, it alone cannot cause empty scripts. See: https://github.com/AssetRipper/AssetRipper/issues/653
+	private void LastInitialization()
+	{
+		RunCore();
+	}
 
-		3. Assembly Reconstruction has not been implemented.
+	private void EarlyUpdate()
+	{
+		RunCore();
+	}
 
-			Asset bundles contain a small amount of information about the script content.
-			This information can be used to recover the serializable fields of a script.
+	private void LastEarlyUpdate()
+	{
+		RunCore();
+	}
 
-			See: https://github.com/AssetRipper/AssetRipper/issues/655
-	
-		4. This script is unnecessary.
+	private void FixedUpdate()
+	{
+		RunCore();
+	}
 
-			If this script has no asset or script references, it can be deleted.
-			Be sure to resolve any compile errors before deleting because they can hide references.
+	private void LastFixedUpdate()
+	{
+		RunCore();
+	}
 
-		5. Script Content Level 0
+	private void PreUpdate()
+	{
+		RunCore();
+	}
 
-			AssetRipper was set to not load any script information.
+	private void LastPreUpdate()
+	{
+		RunCore();
+	}
 
-		6. Cpp2IL failed to decompile Il2Cpp data
+	private void Update()
+	{
+		RunCore();
+	}
 
-			If this happened, there will be errors in the AssetRipper.log indicating that it happened.
-			This is an upstream problem, and the AssetRipper developer has very little control over it.
-			Please post a GitHub issue at: https://github.com/SamboyCoding/Cpp2IL/issues
+	private void LastUpdate()
+	{
+		RunCore();
+	}
 
-		7. An incorrect path was provided to AssetRipper.
+	private void PreLateUpdate()
+	{
+		RunCore();
+	}
 
-			This is characterized by "Mixed game structure has been found at" in the AssetRipper.log file.
-			AssetRipper expects games to conform to a normal file structure for Unity games of that platform.
-			An unexpected file structure could cause AssetRipper to not find the required files for script decompilation.
-			Generally, AssetRipper expects users to provide the root folder of the game. For example:
-				* Windows: the folder containing the game's .exe file
-				* Mac: the .app file/folder
-				* Linux: the folder containing the game's executable file
-				* Android: the apk file
-				* iOS: the ipa file
-				* Switch: the folder containing exefs and romfs
+	private void LastPreLateUpdate()
+	{
+		RunCore();
+	}
 
-		*/
+	private void PostLateUpdate()
+	{
+		RunCore();
+	}
+
+	private void LastPostLateUpdate()
+	{
+		RunCore();
+	}
+
+	private void TimeUpdate()
+	{
+		RunCore();
+	}
+
+	private void LastTimeUpdate()
+	{
+		RunCore();
+	}
+
+	[DebuggerHidden]
+	private void RunCore()
+	{
+		lock (runningAndQueueLock)
+		{
+			running = true;
+		}
+		lock (arrayLock)
+		{
+			int num = tail - 1;
+			for (int i = 0; i < loopItems.Length; i++)
+			{
+				IPlayerLoopItem playerLoopItem = loopItems[i];
+				if (playerLoopItem != null)
+				{
+					try
+					{
+						if (!playerLoopItem.MoveNext())
+						{
+							loopItems[i] = null;
+							goto IL_00f9;
+						}
+					}
+					catch (Exception obj)
+					{
+						loopItems[i] = null;
+						try
+						{
+							unhandledExceptionCallback(obj);
+						}
+						catch
+						{
+						}
+						goto IL_00f9;
+					}
+					continue;
+				}
+				goto IL_00f9;
+				IL_00f9:
+				while (i < num)
+				{
+					IPlayerLoopItem playerLoopItem2 = loopItems[num];
+					if (playerLoopItem2 != null)
+					{
+						try
+						{
+							if (!playerLoopItem2.MoveNext())
+							{
+								loopItems[num] = null;
+								num--;
+								continue;
+							}
+							loopItems[i] = playerLoopItem2;
+							loopItems[num] = null;
+							num--;
+						}
+						catch (Exception obj3)
+						{
+							loopItems[num] = null;
+							num--;
+							try
+							{
+								unhandledExceptionCallback(obj3);
+							}
+							catch
+							{
+							}
+							continue;
+						}
+						goto IL_0106;
+					}
+					num--;
+				}
+				tail = i;
+				break;
+				IL_0106:;
+			}
+			lock (runningAndQueueLock)
+			{
+				running = false;
+				while (waitQueue.Count != 0)
+				{
+					if (loopItems.Length == tail)
+					{
+						Array.Resize(ref loopItems, checked(tail * 2));
+					}
+					loopItems[tail++] = waitQueue.Dequeue();
+				}
+			}
+		}
 	}
 }

@@ -1,66 +1,48 @@
+using System;
 using UnityEngine;
 
-namespace RetroTVFX.Extras
+namespace RetroTVFX.Extras;
+
+public class AudioHumEffect : MonoBehaviour
 {
-	public class AudioHumEffect : MonoBehaviour
+	public int HumCycle = 60;
+
+	[Range(0f, 0.001f)]
+	public float HumAmount = 0.0001f;
+
+	[Range(0f, 0.001f)]
+	public float NoiseAmount;
+
+	private float _sampleRate = 48000f;
+
+	private float _phase;
+
+	private System.Random _rand = new System.Random();
+
+	private void Start()
 	{
-		/*
-		Dummy class. This could have happened for several reasons:
+		_sampleRate = AudioSettings.outputSampleRate;
+	}
 
-		1. No dll files were provided to AssetRipper.
-
-			Unity asset bundles and serialized files do not contain script information to decompile.
-				* For Mono games, that information is contained in .NET dll files.
-				* For Il2Cpp games, that information is contained in compiled C++ assemblies and the global metadata.
-				
-			AssetRipper usually expects games to conform to a normal file structure for Unity games of that platform.
-			A unexpected file structure could cause AssetRipper to not find the required files.
-
-		2. Incorrect dll files were provided to AssetRipper.
-
-			Any of the following could cause this:
-				* Il2CppInterop assemblies
-				* Deobfuscated assemblies
-				* Older assemblies (compared to when the bundle was built)
-				* Newer assemblies (compared to when the bundle was built)
-
-			Note: Although assembly publicizing is bad, it alone cannot cause empty scripts. See: https://github.com/AssetRipper/AssetRipper/issues/653
-
-		3. Assembly Reconstruction has not been implemented.
-
-			Asset bundles contain a small amount of information about the script content.
-			This information can be used to recover the serializable fields of a script.
-
-			See: https://github.com/AssetRipper/AssetRipper/issues/655
-	
-		4. This script is unnecessary.
-
-			If this script has no asset or script references, it can be deleted.
-			Be sure to resolve any compile errors before deleting because they can hide references.
-
-		5. Script Content Level 0
-
-			AssetRipper was set to not load any script information.
-
-		6. Cpp2IL failed to decompile Il2Cpp data
-
-			If this happened, there will be errors in the AssetRipper.log indicating that it happened.
-			This is an upstream problem, and the AssetRipper developer has very little control over it.
-			Please post a GitHub issue at: https://github.com/SamboyCoding/Cpp2IL/issues
-
-		7. An incorrect path was provided to AssetRipper.
-
-			This is characterized by "Mixed game structure has been found at" in the AssetRipper.log file.
-			AssetRipper expects games to conform to a normal file structure for Unity games of that platform.
-			An unexpected file structure could cause AssetRipper to not find the required files for script decompilation.
-			Generally, AssetRipper expects users to provide the root folder of the game. For example:
-				* Windows: the folder containing the game's .exe file
-				* Mac: the .app file/folder
-				* Linux: the folder containing the game's executable file
-				* Android: the apk file
-				* iOS: the ipa file
-				* Switch: the folder containing exefs and romfs
-
-		*/
+	private void OnAudioFilterRead(float[] data, int channels)
+	{
+		float num = (float)HumCycle * MathF.PI / _sampleRate;
+		for (int i = 0; i < data.Length; i += channels)
+		{
+			_phase += num;
+			float num2 = Mathf.Sin(_phase);
+			num2 = ((!(num2 >= 0f)) ? (-1f) : 1f);
+			num2 *= HumAmount;
+			float num3 = (float)(_rand.NextDouble() * 2.0 - 1.0);
+			num3 *= NoiseAmount;
+			for (int j = 0; j < channels; j++)
+			{
+				data[i + j] += num2 + num3;
+			}
+			if (_phase > MathF.PI * 2f)
+			{
+				_phase = 0f;
+			}
+		}
 	}
 }

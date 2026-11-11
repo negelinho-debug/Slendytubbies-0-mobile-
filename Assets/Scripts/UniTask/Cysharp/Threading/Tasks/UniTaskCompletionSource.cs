@@ -1,66 +1,364 @@
-using UnityEngine;
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Runtime.ExceptionServices;
+using System.Threading;
+using System.Threading.Tasks.Sources;
 
-namespace Cysharp.Threading.Tasks
+namespace Cysharp.Threading.Tasks;
+
+public class UniTaskCompletionSource : IUniTaskSource, IValueTaskSource, IPromise, IResolvePromise, IRejectPromise, ICancelPromise
 {
-	public class UniTaskCompletionSource : MonoBehaviour
+	private CancellationToken cancellationToken;
+
+	private ExceptionHolder exception;
+
+	private object gate;
+
+	private Action<object> singleContinuation;
+
+	private object singleState;
+
+	private List<(Action<object>, object)> secondaryContinuationList;
+
+	private int intStatus;
+
+	private bool handled;
+
+	public UniTask Task
 	{
-		/*
-		Dummy class. This could have happened for several reasons:
+		[DebuggerHidden]
+		get
+		{
+			return new UniTask(this, 0);
+		}
+	}
 
-		1. No dll files were provided to AssetRipper.
+	[DebuggerHidden]
+	internal void MarkHandled()
+	{
+		if (!handled)
+		{
+			handled = true;
+		}
+	}
 
-			Unity asset bundles and serialized files do not contain script information to decompile.
-				* For Mono games, that information is contained in .NET dll files.
-				* For Il2Cpp games, that information is contained in compiled C++ assemblies and the global metadata.
-				
-			AssetRipper usually expects games to conform to a normal file structure for Unity games of that platform.
-			A unexpected file structure could cause AssetRipper to not find the required files.
+	[DebuggerHidden]
+	public bool TrySetResult()
+	{
+		return TrySignalCompletion(UniTaskStatus.Succeeded);
+	}
 
-		2. Incorrect dll files were provided to AssetRipper.
+	[DebuggerHidden]
+	public bool TrySetCanceled(CancellationToken cancellationToken = default(CancellationToken))
+	{
+		if (UnsafeGetStatus() != UniTaskStatus.Pending)
+		{
+			return false;
+		}
+		this.cancellationToken = cancellationToken;
+		return TrySignalCompletion(UniTaskStatus.Canceled);
+	}
 
-			Any of the following could cause this:
-				* Il2CppInterop assemblies
-				* Deobfuscated assemblies
-				* Older assemblies (compared to when the bundle was built)
-				* Newer assemblies (compared to when the bundle was built)
+	[DebuggerHidden]
+	public bool TrySetException(Exception exception)
+	{
+		if (exception is OperationCanceledException ex)
+		{
+			return TrySetCanceled(ex.CancellationToken);
+		}
+		if (UnsafeGetStatus() != UniTaskStatus.Pending)
+		{
+			return false;
+		}
+		this.exception = new ExceptionHolder(ExceptionDispatchInfo.Capture(exception));
+		return TrySignalCompletion(UniTaskStatus.Faulted);
+	}
 
-			Note: Although assembly publicizing is bad, it alone cannot cause empty scripts. See: https://github.com/AssetRipper/AssetRipper/issues/653
+	[DebuggerHidden]
+	public void GetResult(short token)
+	{
+		MarkHandled();
+		switch ((UniTaskStatus)intStatus)
+		{
+		case UniTaskStatus.Succeeded:
+			break;
+		case UniTaskStatus.Faulted:
+			exception.GetException().Throw();
+			break;
+		case UniTaskStatus.Canceled:
+			throw new OperationCanceledException(cancellationToken);
+		default:
+			throw new InvalidOperationException("not yet completed.");
+		}
+	}
 
-		3. Assembly Reconstruction has not been implemented.
+	[DebuggerHidden]
+	public UniTaskStatus GetStatus(short token)
+	{
+		return (UniTaskStatus)intStatus;
+	}
 
-			Asset bundles contain a small amount of information about the script content.
-			This information can be used to recover the serializable fields of a script.
+	[DebuggerHidden]
+	public UniTaskStatus UnsafeGetStatus()
+	{
+		return (UniTaskStatus)intStatus;
+	}
 
-			See: https://github.com/AssetRipper/AssetRipper/issues/655
-	
-		4. This script is unnecessary.
+	[DebuggerHidden]
+	public void OnCompleted(Action<object> continuation, object state, short token)
+	{
+		if (gate == null)
+		{
+			Interlocked.CompareExchange(ref gate, new object(), null);
+		}
+		lock (Thread.VolatileRead(ref gate))
+		{
+			if (intStatus != 0)
+			{
+				continuation(state);
+				return;
+			}
+			if (singleContinuation == null)
+			{
+				singleContinuation = continuation;
+				singleState = state;
+				return;
+			}
+			if (secondaryContinuationList == null)
+			{
+				secondaryContinuationList = new List<(Action<object>, object)>();
+			}
+			secondaryContinuationList.Add((continuation, state));
+		}
+	}
 
-			If this script has no asset or script references, it can be deleted.
-			Be sure to resolve any compile errors before deleting because they can hide references.
+	[DebuggerHidden]
+	private bool TrySignalCompletion(UniTaskStatus status)
+	{
+		if (Interlocked.CompareExchange(ref intStatus, (int)status, 0) == 0)
+		{
+			if (gate == null)
+			{
+				Interlocked.CompareExchange(ref gate, new object(), null);
+			}
+			lock (Thread.VolatileRead(ref gate))
+			{
+				if (singleContinuation != null)
+				{
+					try
+					{
+						singleContinuation(singleState);
+					}
+					catch (Exception ex)
+					{
+						UniTaskScheduler.PublishUnobservedTaskException(ex);
+					}
+				}
+				if (secondaryContinuationList != null)
+				{
+					foreach (var (action, obj) in secondaryContinuationList)
+					{
+						try
+						{
+							action(obj);
+						}
+						catch (Exception ex2)
+						{
+							UniTaskScheduler.PublishUnobservedTaskException(ex2);
+						}
+					}
+				}
+				singleContinuation = null;
+				singleState = null;
+				secondaryContinuationList = null;
+			}
+			return true;
+		}
+		return false;
+	}
+}
+public class UniTaskCompletionSource<T> : IUniTaskSource<T>, IUniTaskSource, IValueTaskSource, IValueTaskSource<T>, IPromise<T>, IResolvePromise<T>, IRejectPromise, ICancelPromise
+{
+	private CancellationToken cancellationToken;
 
-		5. Script Content Level 0
+	private T result;
 
-			AssetRipper was set to not load any script information.
+	private ExceptionHolder exception;
 
-		6. Cpp2IL failed to decompile Il2Cpp data
+	private object gate;
 
-			If this happened, there will be errors in the AssetRipper.log indicating that it happened.
-			This is an upstream problem, and the AssetRipper developer has very little control over it.
-			Please post a GitHub issue at: https://github.com/SamboyCoding/Cpp2IL/issues
+	private Action<object> singleContinuation;
 
-		7. An incorrect path was provided to AssetRipper.
+	private object singleState;
 
-			This is characterized by "Mixed game structure has been found at" in the AssetRipper.log file.
-			AssetRipper expects games to conform to a normal file structure for Unity games of that platform.
-			An unexpected file structure could cause AssetRipper to not find the required files for script decompilation.
-			Generally, AssetRipper expects users to provide the root folder of the game. For example:
-				* Windows: the folder containing the game's .exe file
-				* Mac: the .app file/folder
-				* Linux: the folder containing the game's executable file
-				* Android: the apk file
-				* iOS: the ipa file
-				* Switch: the folder containing exefs and romfs
+	private List<(Action<object>, object)> secondaryContinuationList;
 
-		*/
+	private int intStatus;
+
+	private bool handled;
+
+	public UniTask<T> Task
+	{
+		[DebuggerHidden]
+		get
+		{
+			return new UniTask<T>(this, 0);
+		}
+	}
+
+	[DebuggerHidden]
+	internal void MarkHandled()
+	{
+		if (!handled)
+		{
+			handled = true;
+		}
+	}
+
+	[DebuggerHidden]
+	public bool TrySetResult(T result)
+	{
+		if (UnsafeGetStatus() != UniTaskStatus.Pending)
+		{
+			return false;
+		}
+		this.result = result;
+		return TrySignalCompletion(UniTaskStatus.Succeeded);
+	}
+
+	[DebuggerHidden]
+	public bool TrySetCanceled(CancellationToken cancellationToken = default(CancellationToken))
+	{
+		if (UnsafeGetStatus() != UniTaskStatus.Pending)
+		{
+			return false;
+		}
+		this.cancellationToken = cancellationToken;
+		return TrySignalCompletion(UniTaskStatus.Canceled);
+	}
+
+	[DebuggerHidden]
+	public bool TrySetException(Exception exception)
+	{
+		if (exception is OperationCanceledException ex)
+		{
+			return TrySetCanceled(ex.CancellationToken);
+		}
+		if (UnsafeGetStatus() != UniTaskStatus.Pending)
+		{
+			return false;
+		}
+		this.exception = new ExceptionHolder(ExceptionDispatchInfo.Capture(exception));
+		return TrySignalCompletion(UniTaskStatus.Faulted);
+	}
+
+	[DebuggerHidden]
+	public T GetResult(short token)
+	{
+		MarkHandled();
+		switch ((UniTaskStatus)intStatus)
+		{
+		case UniTaskStatus.Succeeded:
+			return result;
+		case UniTaskStatus.Faulted:
+			exception.GetException().Throw();
+			return default(T);
+		case UniTaskStatus.Canceled:
+			throw new OperationCanceledException(cancellationToken);
+		default:
+			throw new InvalidOperationException("not yet completed.");
+		}
+	}
+
+	[DebuggerHidden]
+	void IUniTaskSource.GetResult(short token)
+	{
+		GetResult(token);
+	}
+
+	[DebuggerHidden]
+	public UniTaskStatus GetStatus(short token)
+	{
+		return (UniTaskStatus)intStatus;
+	}
+
+	[DebuggerHidden]
+	public UniTaskStatus UnsafeGetStatus()
+	{
+		return (UniTaskStatus)intStatus;
+	}
+
+	[DebuggerHidden]
+	public void OnCompleted(Action<object> continuation, object state, short token)
+	{
+		if (gate == null)
+		{
+			Interlocked.CompareExchange(ref gate, new object(), null);
+		}
+		lock (Thread.VolatileRead(ref gate))
+		{
+			if (intStatus != 0)
+			{
+				continuation(state);
+				return;
+			}
+			if (singleContinuation == null)
+			{
+				singleContinuation = continuation;
+				singleState = state;
+				return;
+			}
+			if (secondaryContinuationList == null)
+			{
+				secondaryContinuationList = new List<(Action<object>, object)>();
+			}
+			secondaryContinuationList.Add((continuation, state));
+		}
+	}
+
+	[DebuggerHidden]
+	private bool TrySignalCompletion(UniTaskStatus status)
+	{
+		if (Interlocked.CompareExchange(ref intStatus, (int)status, 0) == 0)
+		{
+			if (gate == null)
+			{
+				Interlocked.CompareExchange(ref gate, new object(), null);
+			}
+			lock (Thread.VolatileRead(ref gate))
+			{
+				if (singleContinuation != null)
+				{
+					try
+					{
+						singleContinuation(singleState);
+					}
+					catch (Exception ex)
+					{
+						UniTaskScheduler.PublishUnobservedTaskException(ex);
+					}
+				}
+				if (secondaryContinuationList != null)
+				{
+					foreach (var (action, obj) in secondaryContinuationList)
+					{
+						try
+						{
+							action(obj);
+						}
+						catch (Exception ex2)
+						{
+							UniTaskScheduler.PublishUnobservedTaskException(ex2);
+						}
+					}
+				}
+				singleContinuation = null;
+				singleState = null;
+				secondaryContinuationList = null;
+			}
+			return true;
+		}
+		return false;
 	}
 }

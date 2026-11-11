@@ -1,66 +1,229 @@
+using System;
+using FMOD;
+using FMOD.Studio;
 using UnityEngine;
 
-namespace FMODUnity
+namespace FMODUnity;
+
+public static class RuntimeUtils
 {
-	public class RuntimeUtils : MonoBehaviour
+	public static string GetCommonPlatformPath(string path)
 	{
-		/*
-		Dummy class. This could have happened for several reasons:
+		if (string.IsNullOrEmpty(path))
+		{
+			return path;
+		}
+		return path.Replace('\\', '/');
+	}
 
-		1. No dll files were provided to AssetRipper.
+	public static VECTOR ToFMODVector(this Vector3 vec)
+	{
+		VECTOR result = default(VECTOR);
+		result.x = vec.x;
+		result.y = vec.y;
+		result.z = vec.z;
+		return result;
+	}
 
-			Unity asset bundles and serialized files do not contain script information to decompile.
-				* For Mono games, that information is contained in .NET dll files.
-				* For Il2Cpp games, that information is contained in compiled C++ assemblies and the global metadata.
-				
-			AssetRipper usually expects games to conform to a normal file structure for Unity games of that platform.
-			A unexpected file structure could cause AssetRipper to not find the required files.
+	public static ATTRIBUTES_3D To3DAttributes(this Vector3 pos)
+	{
+		return new ATTRIBUTES_3D
+		{
+			forward = Vector3.forward.ToFMODVector(),
+			up = Vector3.up.ToFMODVector(),
+			position = pos.ToFMODVector()
+		};
+	}
 
-		2. Incorrect dll files were provided to AssetRipper.
+	public static ATTRIBUTES_3D To3DAttributes(this Transform transform)
+	{
+		return new ATTRIBUTES_3D
+		{
+			forward = transform.forward.ToFMODVector(),
+			up = transform.up.ToFMODVector(),
+			position = transform.position.ToFMODVector()
+		};
+	}
 
-			Any of the following could cause this:
-				* Il2CppInterop assemblies
-				* Deobfuscated assemblies
-				* Older assemblies (compared to when the bundle was built)
-				* Newer assemblies (compared to when the bundle was built)
+	public static ATTRIBUTES_3D To3DAttributes(this Transform transform, Vector3 velocity)
+	{
+		return new ATTRIBUTES_3D
+		{
+			forward = transform.forward.ToFMODVector(),
+			up = transform.up.ToFMODVector(),
+			position = transform.position.ToFMODVector(),
+			velocity = velocity.ToFMODVector()
+		};
+	}
 
-			Note: Although assembly publicizing is bad, it alone cannot cause empty scripts. See: https://github.com/AssetRipper/AssetRipper/issues/653
+	public static ATTRIBUTES_3D To3DAttributes(this GameObject go)
+	{
+		return go.transform.To3DAttributes();
+	}
 
-		3. Assembly Reconstruction has not been implemented.
+	public static ATTRIBUTES_3D To3DAttributes(Transform transform, Rigidbody rigidbody = null)
+	{
+		ATTRIBUTES_3D result = transform.To3DAttributes();
+		if ((bool)rigidbody)
+		{
+			result.velocity = rigidbody.linearVelocity.ToFMODVector();
+		}
+		return result;
+	}
 
-			Asset bundles contain a small amount of information about the script content.
-			This information can be used to recover the serializable fields of a script.
+	public static ATTRIBUTES_3D To3DAttributes(GameObject go, Rigidbody rigidbody)
+	{
+		ATTRIBUTES_3D result = go.transform.To3DAttributes();
+		if ((bool)rigidbody)
+		{
+			result.velocity = rigidbody.linearVelocity.ToFMODVector();
+		}
+		return result;
+	}
 
-			See: https://github.com/AssetRipper/AssetRipper/issues/655
-	
-		4. This script is unnecessary.
+	public static ATTRIBUTES_3D To3DAttributes(Transform transform, Rigidbody2D rigidbody)
+	{
+		ATTRIBUTES_3D result = transform.To3DAttributes();
+		if ((bool)rigidbody)
+		{
+			VECTOR velocity = default(VECTOR);
+			velocity.x = rigidbody.linearVelocity.x;
+			velocity.y = rigidbody.linearVelocity.y;
+			velocity.z = 0f;
+			result.velocity = velocity;
+		}
+		return result;
+	}
 
-			If this script has no asset or script references, it can be deleted.
-			Be sure to resolve any compile errors before deleting because they can hide references.
+	public static ATTRIBUTES_3D To3DAttributes(GameObject go, Rigidbody2D rigidbody)
+	{
+		ATTRIBUTES_3D result = go.transform.To3DAttributes();
+		if ((bool)rigidbody)
+		{
+			VECTOR velocity = default(VECTOR);
+			velocity.x = rigidbody.linearVelocity.x;
+			velocity.y = rigidbody.linearVelocity.y;
+			velocity.z = 0f;
+			result.velocity = velocity;
+		}
+		return result;
+	}
 
-		5. Script Content Level 0
+	public static THREAD_TYPE ToFMODThreadType(ThreadType threadType)
+	{
+		return threadType switch
+		{
+			ThreadType.Mixer => THREAD_TYPE.MIXER, 
+			ThreadType.Feeder => THREAD_TYPE.FEEDER, 
+			ThreadType.Stream => THREAD_TYPE.STREAM, 
+			ThreadType.File => THREAD_TYPE.FILE, 
+			ThreadType.Nonblocking => THREAD_TYPE.NONBLOCKING, 
+			ThreadType.Record => THREAD_TYPE.RECORD, 
+			ThreadType.Geometry => THREAD_TYPE.GEOMETRY, 
+			ThreadType.Profiler => THREAD_TYPE.PROFILER, 
+			ThreadType.Studio_Update => THREAD_TYPE.STUDIO_UPDATE, 
+			ThreadType.Studio_Load_Bank => THREAD_TYPE.STUDIO_LOAD_BANK, 
+			ThreadType.Studio_Load_Sample => THREAD_TYPE.STUDIO_LOAD_SAMPLE, 
+			ThreadType.Convolution_1 => THREAD_TYPE.CONVOLUTION1, 
+			ThreadType.Convolution_2 => THREAD_TYPE.CONVOLUTION2, 
+			_ => throw new ArgumentException("Unrecognised thread type '" + threadType.ToString() + "'"), 
+		};
+	}
 
-			AssetRipper was set to not load any script information.
+	public static string DisplayName(this ThreadType thread)
+	{
+		return thread.ToString().Replace('_', ' ');
+	}
 
-		6. Cpp2IL failed to decompile Il2Cpp data
+	public static THREAD_AFFINITY ToFMODThreadAffinity(ThreadAffinity affinity)
+	{
+		THREAD_AFFINITY fmodAffinity = THREAD_AFFINITY.CORE_ALL;
+		SetFMODAffinityBit(affinity, ThreadAffinity.Core0, THREAD_AFFINITY.CORE_0, ref fmodAffinity);
+		SetFMODAffinityBit(affinity, ThreadAffinity.Core1, THREAD_AFFINITY.CORE_1, ref fmodAffinity);
+		SetFMODAffinityBit(affinity, ThreadAffinity.Core2, THREAD_AFFINITY.CORE_2, ref fmodAffinity);
+		SetFMODAffinityBit(affinity, ThreadAffinity.Core3, THREAD_AFFINITY.CORE_3, ref fmodAffinity);
+		SetFMODAffinityBit(affinity, ThreadAffinity.Core4, THREAD_AFFINITY.CORE_4, ref fmodAffinity);
+		SetFMODAffinityBit(affinity, ThreadAffinity.Core5, THREAD_AFFINITY.CORE_5, ref fmodAffinity);
+		SetFMODAffinityBit(affinity, ThreadAffinity.Core6, THREAD_AFFINITY.CORE_6, ref fmodAffinity);
+		SetFMODAffinityBit(affinity, ThreadAffinity.Core7, THREAD_AFFINITY.CORE_7, ref fmodAffinity);
+		SetFMODAffinityBit(affinity, ThreadAffinity.Core8, THREAD_AFFINITY.CORE_8, ref fmodAffinity);
+		SetFMODAffinityBit(affinity, ThreadAffinity.Core9, THREAD_AFFINITY.CORE_9, ref fmodAffinity);
+		SetFMODAffinityBit(affinity, ThreadAffinity.Core10, THREAD_AFFINITY.CORE_10, ref fmodAffinity);
+		SetFMODAffinityBit(affinity, ThreadAffinity.Core11, THREAD_AFFINITY.CORE_11, ref fmodAffinity);
+		SetFMODAffinityBit(affinity, ThreadAffinity.Core12, THREAD_AFFINITY.CORE_12, ref fmodAffinity);
+		SetFMODAffinityBit(affinity, ThreadAffinity.Core13, THREAD_AFFINITY.CORE_13, ref fmodAffinity);
+		SetFMODAffinityBit(affinity, ThreadAffinity.Core14, THREAD_AFFINITY.CORE_14, ref fmodAffinity);
+		SetFMODAffinityBit(affinity, ThreadAffinity.Core15, THREAD_AFFINITY.CORE_15, ref fmodAffinity);
+		return fmodAffinity;
+	}
 
-			If this happened, there will be errors in the AssetRipper.log indicating that it happened.
-			This is an upstream problem, and the AssetRipper developer has very little control over it.
-			Please post a GitHub issue at: https://github.com/SamboyCoding/Cpp2IL/issues
+	private static void SetFMODAffinityBit(ThreadAffinity affinity, ThreadAffinity mask, THREAD_AFFINITY fmodMask, ref THREAD_AFFINITY fmodAffinity)
+	{
+		if ((affinity & mask) != ThreadAffinity.Any)
+		{
+			fmodAffinity |= fmodMask;
+		}
+	}
 
-		7. An incorrect path was provided to AssetRipper.
+	public static void EnforceLibraryOrder()
+	{
+		Memory.GetStats(out var _, out var _);
+		Util.parseID("", out var _);
+	}
 
-			This is characterized by "Mixed game structure has been found at" in the AssetRipper.log file.
-			AssetRipper expects games to conform to a normal file structure for Unity games of that platform.
-			An unexpected file structure could cause AssetRipper to not find the required files for script decompilation.
-			Generally, AssetRipper expects users to provide the root folder of the game. For example:
-				* Windows: the folder containing the game's .exe file
-				* Mac: the .app file/folder
-				* Linux: the folder containing the game's executable file
-				* Android: the apk file
-				* iOS: the ipa file
-				* Switch: the folder containing exefs and romfs
+	public static void DebugLog(string message)
+	{
+		if (!Settings.IsInitialized() || Settings.Instance.LoggingLevel == DEBUG_FLAGS.LOG)
+		{
+			UnityEngine.Debug.Log(message);
+		}
+	}
 
-		*/
+	public static void DebugLogFormat(string format, params object[] args)
+	{
+		if (!Settings.IsInitialized() || Settings.Instance.LoggingLevel == DEBUG_FLAGS.LOG)
+		{
+			UnityEngine.Debug.LogFormat(format, args);
+		}
+	}
+
+	public static void DebugLogWarning(string message)
+	{
+		if (!Settings.IsInitialized() || Settings.Instance.LoggingLevel >= DEBUG_FLAGS.WARNING)
+		{
+			UnityEngine.Debug.LogWarning(message);
+		}
+	}
+
+	public static void DebugLogWarningFormat(string format, params object[] args)
+	{
+		if (!Settings.IsInitialized() || Settings.Instance.LoggingLevel >= DEBUG_FLAGS.WARNING)
+		{
+			UnityEngine.Debug.LogWarningFormat(format, args);
+		}
+	}
+
+	public static void DebugLogError(string message)
+	{
+		if (!Settings.IsInitialized() || Settings.Instance.LoggingLevel >= DEBUG_FLAGS.ERROR)
+		{
+			UnityEngine.Debug.LogError(message);
+		}
+	}
+
+	public static void DebugLogErrorFormat(string format, params object[] args)
+	{
+		if (!Settings.IsInitialized() || Settings.Instance.LoggingLevel >= DEBUG_FLAGS.ERROR)
+		{
+			UnityEngine.Debug.LogErrorFormat(format, args);
+		}
+	}
+
+	public static void DebugLogException(Exception e)
+	{
+		if (!Settings.IsInitialized() || Settings.Instance.LoggingLevel >= DEBUG_FLAGS.ERROR)
+		{
+			UnityEngine.Debug.LogException(e);
+		}
 	}
 }

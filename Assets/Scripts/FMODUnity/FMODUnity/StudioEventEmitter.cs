@@ -1,66 +1,381 @@
+using System;
+using System.Collections.Generic;
+using FMOD.Studio;
 using UnityEngine;
+using UnityEngine.Serialization;
 
-namespace FMODUnity
+namespace FMODUnity;
+
+[AddComponentMenu("FMOD Studio/FMOD Studio Event Emitter")]
+public class StudioEventEmitter : EventHandler
 {
-	public class StudioEventEmitter : MonoBehaviour
+	public EventReference EventReference;
+
+	[Obsolete("Use the EventReference field instead")]
+	public string Event = "";
+
+	[FormerlySerializedAs("PlayEvent")]
+	public EmitterGameEvent EventPlayTrigger;
+
+	[FormerlySerializedAs("StopEvent")]
+	public EmitterGameEvent EventStopTrigger;
+
+	public bool AllowFadeout = true;
+
+	public bool TriggerOnce;
+
+	public bool Preload;
+
+	[FormerlySerializedAs("AllowNonRigidbodyDoppler")]
+	public bool NonRigidbodyVelocity;
+
+	public ParamRef[] Params = new ParamRef[0];
+
+	public bool OverrideAttenuation;
+
+	public float OverrideMinDistance = -1f;
+
+	public float OverrideMaxDistance = -1f;
+
+	protected EventDescription eventDescription;
+
+	protected EventInstance instance;
+
+	private bool hasTriggered;
+
+	private bool isQuitting;
+
+	private bool isOneshot;
+
+	private List<ParamRef> cachedParams = new List<ParamRef>();
+
+	private static List<StudioEventEmitter> activeEmitters = new List<StudioEventEmitter>();
+
+	private const string SnapshotString = "snapshot";
+
+	[Obsolete("Use the EventPlayTrigger field instead")]
+	public EmitterGameEvent PlayEvent
 	{
-		/*
-		Dummy class. This could have happened for several reasons:
+		get
+		{
+			return EventPlayTrigger;
+		}
+		set
+		{
+			EventPlayTrigger = value;
+		}
+	}
 
-		1. No dll files were provided to AssetRipper.
+	[Obsolete("Use the EventStopTrigger field instead")]
+	public EmitterGameEvent StopEvent
+	{
+		get
+		{
+			return EventStopTrigger;
+		}
+		set
+		{
+			EventStopTrigger = value;
+		}
+	}
 
-			Unity asset bundles and serialized files do not contain script information to decompile.
-				* For Mono games, that information is contained in .NET dll files.
-				* For Il2Cpp games, that information is contained in compiled C++ assemblies and the global metadata.
-				
-			AssetRipper usually expects games to conform to a normal file structure for Unity games of that platform.
-			A unexpected file structure could cause AssetRipper to not find the required files.
+	public EventDescription EventDescription => eventDescription;
 
-		2. Incorrect dll files were provided to AssetRipper.
+	public EventInstance EventInstance => instance;
 
-			Any of the following could cause this:
-				* Il2CppInterop assemblies
-				* Deobfuscated assemblies
-				* Older assemblies (compared to when the bundle was built)
-				* Newer assemblies (compared to when the bundle was built)
+	public bool IsActive { get; private set; }
 
-			Note: Although assembly publicizing is bad, it alone cannot cause empty scripts. See: https://github.com/AssetRipper/AssetRipper/issues/653
+	private float MaxDistance
+	{
+		get
+		{
+			if (OverrideAttenuation)
+			{
+				return OverrideMaxDistance;
+			}
+			if (!eventDescription.isValid())
+			{
+				Lookup();
+			}
+			eventDescription.getMinMaxDistance(out var _, out var max);
+			return max;
+		}
+	}
 
-		3. Assembly Reconstruction has not been implemented.
+	public static void UpdateActiveEmitters()
+	{
+		foreach (StudioEventEmitter activeEmitter in activeEmitters)
+		{
+			activeEmitter.UpdatePlayingStatus();
+		}
+	}
 
-			Asset bundles contain a small amount of information about the script content.
-			This information can be used to recover the serializable fields of a script.
+	private static void RegisterActiveEmitter(StudioEventEmitter emitter)
+	{
+		if (!activeEmitters.Contains(emitter))
+		{
+			activeEmitters.Add(emitter);
+		}
+	}
 
-			See: https://github.com/AssetRipper/AssetRipper/issues/655
-	
-		4. This script is unnecessary.
+	private static void DeregisterActiveEmitter(StudioEventEmitter emitter)
+	{
+		activeEmitters.Remove(emitter);
+	}
 
-			If this script has no asset or script references, it can be deleted.
-			Be sure to resolve any compile errors before deleting because they can hide references.
+	private void UpdatePlayingStatus(bool force = false)
+	{
+		bool flag = StudioListener.DistanceSquaredToNearestListener(base.transform.position) <= MaxDistance * MaxDistance;
+		if (force || flag != IsPlaying())
+		{
+			if (flag)
+			{
+				PlayInstance();
+			}
+			else
+			{
+				StopInstance();
+			}
+		}
+	}
 
-		5. Script Content Level 0
+	protected override void Start()
+	{
+		RuntimeUtils.EnforceLibraryOrder();
+		if (Preload)
+		{
+			Lookup();
+			eventDescription.loadSampleData();
+		}
+		HandleGameEvent(EmitterGameEvent.ObjectStart);
+		if (NonRigidbodyVelocity && (bool)GetComponent<Rigidbody>())
+		{
+			Debug.LogWarning($"[FMOD] Non-Rigidbody Velocity is enabled on Emitter attached to GameObject \"{base.name}\", which also has a Rigidbody component attached - this will be disabled in favor of velocity from Rigidbody component.");
+			NonRigidbodyVelocity = false;
+		}
+		if (NonRigidbodyVelocity && (bool)GetComponent<Rigidbody2D>())
+		{
+			Debug.LogWarning($"[FMOD] Non-Rigidbody Velocity is enabled on Emitter attached to GameObject \"{base.name}\", which also has a Rigidbody2D component attached - this will be disabled in favor of velocity from Rigidbody2D component.");
+			NonRigidbodyVelocity = false;
+		}
+	}
 
-			AssetRipper was set to not load any script information.
+	private void OnApplicationQuit()
+	{
+		isQuitting = true;
+	}
 
-		6. Cpp2IL failed to decompile Il2Cpp data
+	protected override void OnDestroy()
+	{
+		if (isQuitting)
+		{
+			return;
+		}
+		HandleGameEvent(EmitterGameEvent.ObjectDestroy);
+		if (instance.isValid())
+		{
+			RuntimeManager.DetachInstanceFromGameObject(instance);
+			if (eventDescription.isValid() && isOneshot)
+			{
+				instance.release();
+				instance.clearHandle();
+			}
+		}
+		DeregisterActiveEmitter(this);
+		if (Preload)
+		{
+			eventDescription.unloadSampleData();
+		}
+	}
 
-			If this happened, there will be errors in the AssetRipper.log indicating that it happened.
-			This is an upstream problem, and the AssetRipper developer has very little control over it.
-			Please post a GitHub issue at: https://github.com/SamboyCoding/Cpp2IL/issues
+	protected override void HandleGameEvent(EmitterGameEvent gameEvent)
+	{
+		if (EventPlayTrigger == gameEvent)
+		{
+			Play();
+		}
+		if (EventStopTrigger == gameEvent)
+		{
+			Stop();
+		}
+	}
 
-		7. An incorrect path was provided to AssetRipper.
+	private void Lookup()
+	{
+		eventDescription = RuntimeManager.GetEventDescription(EventReference);
+		if (eventDescription.isValid())
+		{
+			for (int i = 0; i < Params.Length; i++)
+			{
+				eventDescription.getParameterDescriptionByName(Params[i].Name, out var parameter);
+				Params[i].ID = parameter.id;
+			}
+		}
+	}
 
-			This is characterized by "Mixed game structure has been found at" in the AssetRipper.log file.
-			AssetRipper expects games to conform to a normal file structure for Unity games of that platform.
-			An unexpected file structure could cause AssetRipper to not find the required files for script decompilation.
-			Generally, AssetRipper expects users to provide the root folder of the game. For example:
-				* Windows: the folder containing the game's .exe file
-				* Mac: the .app file/folder
-				* Linux: the folder containing the game's executable file
-				* Android: the apk file
-				* iOS: the ipa file
-				* Switch: the folder containing exefs and romfs
+	public void Play()
+	{
+		if ((TriggerOnce && hasTriggered) || EventReference.IsNull)
+		{
+			return;
+		}
+		cachedParams.Clear();
+		if (!eventDescription.isValid())
+		{
+			Lookup();
+		}
+		eventDescription.isSnapshot(out var snapshot);
+		if (!snapshot)
+		{
+			eventDescription.isOneshot(out isOneshot);
+		}
+		eventDescription.is3D(out var is3D);
+		IsActive = true;
+		if (is3D && Settings.Instance.StopEventsOutsideMaxDistance)
+		{
+			if (!isOneshot)
+			{
+				RegisterActiveEmitter(this);
+			}
+			UpdatePlayingStatus(force: true);
+		}
+		else
+		{
+			PlayInstance();
+		}
+	}
 
-		*/
+	private void PlayInstance()
+	{
+		if (!instance.isValid())
+		{
+			instance.clearHandle();
+		}
+		if (isOneshot && instance.isValid())
+		{
+			instance.release();
+			instance.clearHandle();
+		}
+		eventDescription.is3D(out var is3D);
+		if (!instance.isValid())
+		{
+			eventDescription.createInstance(out instance);
+			if (is3D)
+			{
+				GetComponent<Transform>();
+				if ((bool)GetComponent<Rigidbody>())
+				{
+					Rigidbody component = GetComponent<Rigidbody>();
+					instance.set3DAttributes(RuntimeUtils.To3DAttributes(base.gameObject, component));
+					RuntimeManager.AttachInstanceToGameObject(instance, base.gameObject, component);
+				}
+				else if ((bool)GetComponent<Rigidbody2D>())
+				{
+					Rigidbody2D component2 = GetComponent<Rigidbody2D>();
+					instance.set3DAttributes(RuntimeUtils.To3DAttributes(base.gameObject, component2));
+					RuntimeManager.AttachInstanceToGameObject(instance, base.gameObject, component2);
+				}
+				else
+				{
+					instance.set3DAttributes(base.gameObject.To3DAttributes());
+					RuntimeManager.AttachInstanceToGameObject(instance, base.gameObject, NonRigidbodyVelocity);
+				}
+			}
+		}
+		ParamRef[] array = Params;
+		foreach (ParamRef paramRef in array)
+		{
+			instance.setParameterByID(paramRef.ID, paramRef.Value);
+		}
+		foreach (ParamRef cachedParam in cachedParams)
+		{
+			instance.setParameterByID(cachedParam.ID, cachedParam.Value);
+		}
+		if (is3D && OverrideAttenuation)
+		{
+			instance.setProperty(EVENT_PROPERTY.MINIMUM_DISTANCE, OverrideMinDistance);
+			instance.setProperty(EVENT_PROPERTY.MAXIMUM_DISTANCE, OverrideMaxDistance);
+		}
+		instance.start();
+		hasTriggered = true;
+	}
+
+	public void Stop()
+	{
+		DeregisterActiveEmitter(this);
+		IsActive = false;
+		cachedParams.Clear();
+		StopInstance();
+	}
+
+	private void StopInstance()
+	{
+		if (TriggerOnce && hasTriggered)
+		{
+			DeregisterActiveEmitter(this);
+		}
+		if (instance.isValid())
+		{
+			instance.stop((!AllowFadeout) ? FMOD.Studio.STOP_MODE.IMMEDIATE : FMOD.Studio.STOP_MODE.ALLOWFADEOUT);
+			instance.release();
+			if (!AllowFadeout)
+			{
+				instance.clearHandle();
+			}
+		}
+	}
+
+	public void SetParameter(string name, float value, bool ignoreseekspeed = false)
+	{
+		if (Settings.Instance.StopEventsOutsideMaxDistance && IsActive)
+		{
+			string findName = name;
+			ParamRef paramRef = cachedParams.Find((ParamRef x) => x.Name == findName);
+			if (paramRef == null)
+			{
+				eventDescription.getParameterDescriptionByName(name, out var parameter);
+				paramRef = new ParamRef();
+				paramRef.ID = parameter.id;
+				paramRef.Name = parameter.name;
+				cachedParams.Add(paramRef);
+			}
+			paramRef.Value = value;
+		}
+		if (instance.isValid())
+		{
+			instance.setParameterByName(name, value, ignoreseekspeed);
+		}
+	}
+
+	public void SetParameter(PARAMETER_ID id, float value, bool ignoreseekspeed = false)
+	{
+		if (Settings.Instance.StopEventsOutsideMaxDistance && IsActive)
+		{
+			PARAMETER_ID findId = id;
+			ParamRef paramRef = cachedParams.Find((ParamRef x) => x.ID.Equals(findId));
+			if (paramRef == null)
+			{
+				eventDescription.getParameterDescriptionByID(id, out var parameter);
+				paramRef = new ParamRef();
+				paramRef.ID = parameter.id;
+				paramRef.Name = parameter.name;
+				cachedParams.Add(paramRef);
+			}
+			paramRef.Value = value;
+		}
+		if (instance.isValid())
+		{
+			instance.setParameterByID(id, value, ignoreseekspeed);
+		}
+	}
+
+	public bool IsPlaying()
+	{
+		if (instance.isValid())
+		{
+			instance.getPlaybackState(out var state);
+			return state != PLAYBACK_STATE.STOPPED;
+		}
+		return false;
 	}
 }
